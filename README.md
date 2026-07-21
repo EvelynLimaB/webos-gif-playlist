@@ -1,6 +1,6 @@
 # Screensaver Playlist for rooted LG webOS
 
-A local, rotating screensaver playlist for animated and still images. Media is downloaded or copied to the TV once, preserved byte-for-byte, and displayed sequentially or in shuffle mode.
+A local, rotating screensaver playlist for animated and still images. Media is downloaded or copied to the TV once and displayed sequentially or in shuffle mode.
 
 > **Pre-release:** GIF playback is confirmed on an LG 43LM6300PSB running firmware 05.40.97 / webOS 4.10.2. Every other format and the complete recovery/reboot checklist must still pass on physical hardware before this branch is considered stable.
 
@@ -9,10 +9,11 @@ A local, rotating screensaver playlist for animated and still images. Media is d
 - Direct HTTP/HTTPS imports without relying on filename extensions.
 - Personal-file and whole-folder upload from Linux, macOS, or WSL over SSH.
 - `.txt` URL-list support with one direct media URL per line.
+- Automatic PC-side adaptation of oversized local media to fit inside 1920×1080 while preserving aspect ratio.
 - GIF, PNG/APNG containers, JPEG, and WebP signature detection.
-- Source bytes are never resized, converted, recompressed, or re-encoded.
+- Compatible files are uploaded byte-for-byte; adapted temporary copies never overwrite the originals.
 - Up to 24 items, 32 MiB per item, and 256 MiB total.
-- Maximum logical dimensions: 1920 pixels per axis and 2,073,600 pixels total.
+- Maximum TV-side logical dimensions: 1920 pixels per axis and 2,073,600 pixels total.
 - Sequential or shuffled rotation at 10, 20, 30, 60, 120, or 300 seconds.
 - Crop, fit, or stretch scaling, with smooth or pixel filtering.
 - Temporary activation, explicit boot activation, safe disable, and complete reset.
@@ -63,18 +64,35 @@ chmod +x tools/send-media.sh
 
 tools/send-media.sh \
   --host 192.168.0.13 \
-  --identity "$HOME/.ssh/webos_tv" \
+  --identity "$HOME/.ssh/id_devman" \
   "$HOME/Pictures/screensavers"
 ```
 
 The directory is processed at its top level in filename order:
 
 - `.gif`, `.png`, `.apng`, `.jpg`, `.jpeg`, and `.webp` files are streamed and imported;
+- oversized local media is automatically adapted before upload;
 - `.txt` files are treated as URL lists, with one direct `http://` or `https://` media URL per line;
 - blank lines and lines beginning with `#` are ignored;
 - subdirectories and unsupported files are skipped and reported;
 - failed items do not prevent the remaining items from being attempted;
-- the final summary reports sources, successful imports, failures, and skipped entries.
+- the final summary reports sources, successful imports, adapted items, failures, and skipped entries.
+
+The uploader fits oversized files inside 1920×1080 without stretching or upscaling. The original local file is unchanged. JPEG adaptations use quality 92, while GIF adaptations preserve animation by coalescing, resizing, and optimizing frames. Install ImageMagick on Debian, Ubuntu, or Linux Mint with:
+
+```bash
+sudo apt install imagemagick
+```
+
+Disable adaptation and upload original bytes with:
+
+```bash
+tools/send-media.sh \
+  --no-adapt \
+  --host 192.168.0.13 \
+  --identity "$HOME/.ssh/id_devman" \
+  oversized-image.png
+```
 
 Individual files and direct URLs remain supported:
 
@@ -90,7 +108,7 @@ Optional persistent configuration:
 export WEBOS_TV_HOST=192.168.0.13
 export WEBOS_TV_USER=root
 export WEBOS_TV_PORT=22
-export WEBOS_TV_IDENTITY="$HOME/.ssh/webos_tv"
+export WEBOS_TV_IDENTITY="$HOME/.ssh/id_devman"
 
 tools/send-media.sh "$HOME/Pictures/screensavers"
 ```
@@ -106,7 +124,7 @@ APP=/media/developer/apps/usr/palm/applications/com.evelyn.webosgifplaylist
 sh "$APP/assets/manager.sh" import-dir /tmp/screensavers
 ```
 
-The same supported extensions, URL-list rules, playlist limits, and per-item failure handling apply. Check `status` first when importing a large folder so the total does not exceed 24 items or 256 MiB.
+TV-side folder import cannot resize media. Use the PC helper for automatic adaptation. The same supported extensions, URL-list rules, playlist limits, and per-item failure handling otherwise apply.
 
 ## Controls
 
@@ -137,7 +155,7 @@ The app bind-mounts a generated QML file over the system entry point; it never o
 1. Run Compatibility check and confirm `/qml/main.qml`, `stat=ok`, and `mountsFile=ok`.
 2. Confirm an existing v0.1.x GIF playlist migrates and still plays.
 3. Add a direct GIF and a personally uploaded GIF.
-4. Import a mixed PC folder and URL list, then verify its summary and resulting playlist.
+4. Import a mixed PC folder and URL list, verify automatic adaptation, and check the resulting playlist.
 5. Test a 1920×1080 JPEG and PNG with Smooth, Fit, and Crop.
 6. Test static WebP, animated WebP, and APNG; record full animation, first-frame-only behavior, or decoder failure.
 7. Add and remove media while the override is active.
