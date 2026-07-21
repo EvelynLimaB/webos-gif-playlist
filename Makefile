@@ -1,11 +1,11 @@
-APP_ID   = org.oted.idlegif
+APP_ID   = com.evelyn.webosgifplaylist
 VERSION  = $(shell node -p "require('./appinfo.json').version")
 IPK      = $(APP_ID)_$(VERSION)_all.ipk
 DEVICE   = tv
 
-.PHONY: all package install apply uninstall launch update clean test
+.PHONY: all package install apply launch update clean test status disable reset inspect
 
-all: update
+all: package
 
 package:
 	@echo "Packaging $(APP_ID) v$(VERSION)..."
@@ -16,7 +16,7 @@ package:
 		-e "Makefile" \
 		-e "AGENTS.md" \
 		-e "store-description.md" \
-		-e "org.oted.idlegif.yml" \
+		-e "*.manifest.json" \
 		-e "test" \
 		-e "default.gif" \
 		-e "default1.gif" \
@@ -27,31 +27,32 @@ package:
 	@echo "Built: $(IPK)"
 
 install: package
-	@echo "Installing to device '$(DEVICE)'..."
 	@ares-install -d $(DEVICE) $(IPK)
 
 apply:
-	@echo "Applying screensaver override on '$(DEVICE)'..."
-	@ares-shell -d $(DEVICE) -r "sh /media/developer/apps/usr/palm/applications/org.oted.idlegif/assets/install.sh"
-
-uninstall:
-	@echo "Removing screensaver override on '$(DEVICE)'..."
-	@ares-shell -d $(DEVICE) -r "sh /media/developer/apps/usr/palm/applications/org.oted.idlegif/assets/uninstall.sh"
+	@ares-shell -d $(DEVICE) -r "sh /media/developer/apps/usr/palm/applications/$(APP_ID)/assets/install.sh"
 
 launch:
-	@echo "Launching $(APP_ID) on '$(DEVICE)'..."
 	@ares-launch -d $(DEVICE) $(APP_ID)
 
 update: install apply launch
 
+status:
+	@ares-shell -d $(DEVICE) -r "sh /media/developer/apps/usr/palm/applications/$(APP_ID)/assets/manager.sh status"
+
+disable:
+	@ares-shell -d $(DEVICE) -r "sh /media/developer/apps/usr/palm/applications/$(APP_ID)/assets/manager.sh disable"
+
+reset:
+	@ares-shell -d $(DEVICE) -r "sh /media/developer/apps/usr/palm/applications/$(APP_ID)/assets/manager.sh reset"
+
 test:
-	@echo "Navigating to home, then triggering screensaver..."
 	@ares-launch -d $(DEVICE) com.webos.app.home
 	@sleep 3
 	@ares-shell -d $(DEVICE) -r "luna-send -n 1 luna://com.webos.service.tvpower/power/turnOnScreenSaver '{}'"
 
 clean:
-	@rm -f *.ipk
+	@rm -f *.ipk *.manifest.json
 
 inspect:
 	@ares-inspect -d $(DEVICE) -o $(APP_ID)
