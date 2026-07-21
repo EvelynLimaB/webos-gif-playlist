@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - feature/**
+  pull_request:
+
+jobs:
+  validate-and-package:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Validate shell syntax
+        run: |
+          sh -n assets/manager.sh
+          sh -n assets/install.sh
+          sh -n assets/uninstall.sh
+
+      - name: Validate JavaScript syntax
+        run: |
+          node --check js/webos.js
+          node --check js/view.js
+          node --check js/app.js
+
+      - name: Install ares-cli
+        run: npm install -g @webosose/ares-cli
+
+      - name: Build IPK
+        run: make package
+
+      - name: Upload test package
+        uses: actions/upload-artifact@v4
+        with:
+          name: webos-gif-playlist-ipk
+          path: com.evelyn.webosgifplaylist_*_all.ipk
+          if-no-files-found: error
