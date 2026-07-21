@@ -29,6 +29,7 @@ shellcheck:
 
 test:
 	@sh test/manager-test.sh
+	@sh test/batch-import-test.sh
 	@sh test/send-media-test.sh
 	@node test/ui-contract-test.js
 
@@ -40,7 +41,7 @@ stage:
 	@cp js/webos.js js/view.js js/app.js $(DIST)/js/
 	@cp assets/idlegif80.png assets/idlegif130.png assets/idlegif300.png $(DIST)/assets/
 	@cp assets/manager.sh assets/install.sh assets/uninstall.sh $(DIST)/assets/
-	@cp assets/lib/core.sh assets/lib/media.sh assets/lib/commands.sh $(DIST)/assets/lib/
+	@cp assets/lib/core.sh assets/lib/media.sh assets/lib/batch.sh assets/lib/commands.sh $(DIST)/assets/lib/
 
 package: stage
 	@command -v ares-package >/dev/null 2>&1 || { \
