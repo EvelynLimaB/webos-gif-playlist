@@ -304,14 +304,21 @@ EOF_QML
         fillMode: $fill_mode
         cache: false
         smooth: $smooth
-        playing: true
+        playing: false
 
         onSourceChanged: {
             window.imageFailed = false;
             errorAdvance.stop();
         }
         onStatusChanged: {
+            // AnimatedImage may set playing=false after a still image. Explicitly
+            // restore it whenever a new source reaches Ready so later GIFs animate.
+            playing = (status === Image.Ready);
             if (status === Image.Ready) {
+                paused = false;
+                if (frameCount > 1) {
+                    currentFrame = 0;
+                }
                 window.imageFailed = false;
                 errorAdvance.stop();
             } else if (status === Image.Error) {
@@ -430,4 +437,3 @@ enable_playlist() {
 boot_playlist() {
     apply_playlist
 }
-
