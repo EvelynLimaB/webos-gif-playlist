@@ -153,13 +153,15 @@ View.prototype.setStatus = function(message, type) {
 };
 
 View.prototype.setBusy = function(busy) {
-    this._busy = !!busy;
+    busy = !!busy;
+    this._busy = busy;
     var buttons = document.getElementsByTagName("button");
     var i;
     for (i = 0; i < buttons.length; i++) {
-        if (buttons[i].getAttribute("data-permanent-disabled") === "true") continue;
         if (busy) {
-            buttons[i].setAttribute("data-was-disabled", buttons[i].disabled ? "true" : "false");
+            if (buttons[i].getAttribute("data-was-disabled") === null) {
+                buttons[i].setAttribute("data-was-disabled", buttons[i].disabled ? "true" : "false");
+            }
             buttons[i].disabled = true;
         } else {
             var wasDisabled = buttons[i].getAttribute("data-was-disabled");
@@ -183,6 +185,13 @@ View.prototype._rebuildFocusables = function() {
     var nextIndex = previous ? this._focusables.indexOf(previous) : -1;
     this._focusIndex = nextIndex >= 0 ? nextIndex : 0;
     if (this._focusables[this._focusIndex]) this._focusables[this._focusIndex].focus();
+};
+
+View.prototype._focusCurrent = function() {
+    var element = this._focusables[this._focusIndex];
+    if (!element) return;
+    element.focus();
+    if (element.scrollIntoView) element.scrollIntoView(false);
 };
 
 View.prototype._bindNavigation = function() {
@@ -213,6 +222,6 @@ View.prototype._bindNavigation = function() {
         } else {
             self._focusIndex = Math.min(self._focusables.length - 1, self._focusIndex + 1);
         }
-        self._focusables[self._focusIndex].focus();
+        self._focusCurrent();
     });
 };
