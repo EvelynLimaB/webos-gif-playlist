@@ -1,5 +1,3 @@
-// DOM view and remote-control navigation for Chromium 53-era webOS.
-
 function View() {
     this._callbacks = {};
     this._focusables = [];
@@ -9,6 +7,47 @@ function View() {
     this._bindNavigation();
 }
 
+View.prototype._bindStaticControls = function() {
+    var self = this;
+
+    document.getElementById("btn-add").addEventListener("click", function() {
+        var input = document.getElementById("url-input");
+        if (self._callbacks.add) {
+            self._callbacks.add(input.value.trim());
+        }
+    });
+    document.getElementById("btn-mode").addEventListener("click", function() {
+        if (self._callbacks.mode) { self._callbacks.mode(); }
+    });
+    document.getElementById("btn-fit").addEventListener("click", function() {
+        if (self._callbacks.fit) { self._callbacks.fit(); }
+    });
+    document.getElementById("btn-duration").addEventListener("click", function() {
+        if (self._callbacks.duration) { self._callbacks.duration(); }
+    });
+    document.getElementById("btn-refresh").addEventListener("click", function() {
+        if (self._callbacks.refresh) { self._callbacks.refresh(); }
+    });
+    document.getElementById("btn-check").addEventListener("click", function() {
+        if (self._callbacks.check) { self._callbacks.check(); }
+    });
+    document.getElementById("btn-apply").addEventListener("click", function() {
+        if (self._callbacks.apply) { self._callbacks.apply(); }
+    });
+    document.getElementById("btn-enable").addEventListener("click", function() {
+        if (self._callbacks.enable) { self._callbacks.enable(); }
+    });
+    document.getElementById("btn-test").addEventListener("click", function() {
+        if (self._callbacks.test) { self._callbacks.test(); }
+    });
+    document.getElementById("btn-disable").addEventListener("click", function() {
+        if (self._callbacks.disable) { self._callbacks.disable(); }
+    });
+    document.getElementById("btn-reset").addEventListener("click", function() {
+        if (self._callbacks.reset) { self._callbacks.reset(); }
+    });
+};
+
 View.prototype.onAdd = function(callback) { this._callbacks.add = callback; };
 View.prototype.onRemove = function(callback) { this._callbacks.remove = callback; };
 View.prototype.onMove = function(callback) { this._callbacks.move = callback; };
@@ -16,95 +55,83 @@ View.prototype.onMode = function(callback) { this._callbacks.mode = callback; };
 View.prototype.onFit = function(callback) { this._callbacks.fit = callback; };
 View.prototype.onDuration = function(callback) { this._callbacks.duration = callback; };
 View.prototype.onRefresh = function(callback) { this._callbacks.refresh = callback; };
+View.prototype.onCheck = function(callback) { this._callbacks.check = callback; };
+View.prototype.onApply = function(callback) { this._callbacks.apply = callback; };
 View.prototype.onEnable = function(callback) { this._callbacks.enable = callback; };
-View.prototype.onDisable = function(callback) { this._callbacks.disable = callback; };
 View.prototype.onTest = function(callback) { this._callbacks.test = callback; };
+View.prototype.onDisable = function(callback) { this._callbacks.disable = callback; };
 View.prototype.onReset = function(callback) { this._callbacks.reset = callback; };
 
-View.prototype._bindStaticControls = function() {
-    var self = this;
-
-    document.getElementById("btn-add").onclick = function() {
-        var value = document.getElementById("url-input").value.replace(/^\s+|\s+$/g, "");
-        if (self._callbacks.add) self._callbacks.add(value);
-    };
-    document.getElementById("btn-mode").onclick = function() {
-        if (self._callbacks.mode) self._callbacks.mode();
-    };
-    document.getElementById("btn-fit").onclick = function() {
-        if (self._callbacks.fit) self._callbacks.fit();
-    };
-    document.getElementById("btn-duration").onclick = function() {
-        if (self._callbacks.duration) self._callbacks.duration();
-    };
-    document.getElementById("btn-refresh").onclick = function() {
-        if (self._callbacks.refresh) self._callbacks.refresh();
-    };
-    document.getElementById("btn-enable").onclick = function() {
-        if (self._callbacks.enable) self._callbacks.enable();
-    };
-    document.getElementById("btn-disable").onclick = function() {
-        if (self._callbacks.disable) self._callbacks.disable();
-    };
-    document.getElementById("btn-test").onclick = function() {
-        if (self._callbacks.test) self._callbacks.test();
-    };
-    document.getElementById("btn-reset").onclick = function() {
-        if (self._callbacks.reset) self._callbacks.reset();
-    };
-};
-
-View.prototype._formatBytes = function(bytes) {
-    if (bytes < 1024) return bytes + " B";
-    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + " KiB";
-    return (bytes / 1048576).toFixed(1) + " MiB";
+View.prototype._humanBytes = function(bytes) {
+    if (bytes >= 1048576) {
+        return (bytes / 1048576).toFixed(1) + " MiB";
+    }
+    if (bytes >= 1024) {
+        return Math.round(bytes / 1024) + " KiB";
+    }
+    return bytes + " B";
 };
 
 View.prototype.render = function(state, items) {
-    document.getElementById("value-enabled").textContent = state.enabled === "yes" ? "Enabled" : "Disabled";
-    document.getElementById("value-target").textContent = state.target || "Not detected";
-    document.getElementById("value-count").textContent = String(items.length) + " / 12";
-    document.getElementById("btn-mode").textContent = "Order: " + (state.mode === "shuffle" ? "Shuffle" : "Sequential");
-
-    var fitLabels = { crop: "Crop", fit: "Fit", stretch: "Stretch" };
-    document.getElementById("btn-fit").textContent = "Scaling: " + (fitLabels[state.fit] || "Crop");
-    document.getElementById("btn-duration").textContent = "Switch every: " + Math.round((parseInt(state.duration, 10) || 30000) / 1000) + "s";
-
     var indicator = document.getElementById("enabled-indicator");
-    indicator.className = state.enabled === "yes" ? "indicator enabled" : "indicator disabled";
+    var enabledText = document.getElementById("value-enabled");
+    var enabled = state.enabled === "yes";
+    var autostart = state.autostart === "yes";
 
+    indicator.className = enabled ? "indicator enabled" : "indicator disabled";
+    if (enabled && autostart) {
+        enabledText.textContent = "Enabled at boot";
+    } else if (enabled) {
+        enabledText.textContent = "Temporary";
+    } else {
+        enabledText.textContent = "Disabled";
+    }
+
+    document.getElementById("value-target").textContent = state.target || "Not found";
+    document.getElementById("value-count").textContent = items.length + " / 12 · " + this._humanBytes(parseInt(state.bytes || "0", 10) || 0);
+    document.getElementById("btn-mode").textContent = state.mode === "shuffle" ? "Order: Shuffle" : "Order: Sequential";
+    document.getElementById("btn-fit").textContent = "Scaling: " + ({crop: "Crop", fit: "Fit", stretch: "Stretch"}[state.fit] || "Crop");
+    document.getElementById("btn-duration").textContent = "Switch every: " + Math.round((parseInt(state.duration, 10) || 30000) / 1000) + "s";
+    document.getElementById("btn-add").disabled = items.length >= 12;
+
+    this._renderPlaylist(items);
+    this._rebuildFocusables();
+};
+
+View.prototype._renderPlaylist = function(items) {
     var container = document.getElementById("playlist");
-    while (container.firstChild) container.removeChild(container.firstChild);
+    var self = this;
+    var index;
+
+    while (container.firstChild) {
+        container.removeChild(container.firstChild);
+    }
 
     if (!items.length) {
         var empty = document.createElement("div");
         empty.className = "empty";
         empty.textContent = "No GIFs downloaded yet.";
         container.appendChild(empty);
+        return;
     }
 
-    var self = this;
-    var i;
-    for (i = 0; i < items.length; i++) {
-        (function(item, index) {
+    for (index = 0; index < items.length; index += 1) {
+        (function(item, position) {
             var row = document.createElement("div");
             row.className = "playlist-row";
 
-            var position = document.createElement("div");
-            position.className = "position";
-            position.textContent = String(index + 1);
+            var number = document.createElement("div");
+            number.className = "position";
+            number.textContent = String(position + 1);
 
             var details = document.createElement("div");
             details.className = "details";
-
             var name = document.createElement("div");
             name.className = "item-name";
             name.textContent = item.id;
-
             var size = document.createElement("div");
             size.className = "item-size";
-            size.textContent = self._formatBytes(item.bytes);
-
+            size.textContent = self._humanBytes(item.bytes);
             details.appendChild(name);
             details.appendChild(size);
 
@@ -112,38 +139,37 @@ View.prototype.render = function(state, items) {
             controls.className = "row-controls";
 
             var up = document.createElement("button");
+            up.className = "compact";
             up.textContent = "Up";
-            up.disabled = index === 0;
-            up.onclick = function() {
-                if (self._callbacks.move) self._callbacks.move(item.id, "up");
-            };
+            up.disabled = position === 0;
+            up.addEventListener("click", function() {
+                if (self._callbacks.move) { self._callbacks.move(item.id, "up"); }
+            });
 
             var down = document.createElement("button");
+            down.className = "compact";
             down.textContent = "Down";
-            down.disabled = index === items.length - 1;
-            down.onclick = function() {
-                if (self._callbacks.move) self._callbacks.move(item.id, "down");
-            };
+            down.disabled = position === items.length - 1;
+            down.addEventListener("click", function() {
+                if (self._callbacks.move) { self._callbacks.move(item.id, "down"); }
+            });
 
             var remove = document.createElement("button");
-            remove.className = "danger compact";
+            remove.className = "compact danger";
             remove.textContent = "Remove";
-            remove.onclick = function() {
-                if (self._callbacks.remove) self._callbacks.remove(item.id);
-            };
+            remove.addEventListener("click", function() {
+                if (self._callbacks.remove) { self._callbacks.remove(item.id); }
+            });
 
             controls.appendChild(up);
             controls.appendChild(down);
             controls.appendChild(remove);
-            row.appendChild(position);
+            row.appendChild(number);
             row.appendChild(details);
             row.appendChild(controls);
             container.appendChild(row);
-        })(items[i], i);
+        }(items[index], index));
     }
-
-    this._rebuildFocusables();
-    this.setBusy(this._busy);
 };
 
 View.prototype.setStatus = function(message, type) {
@@ -153,65 +179,82 @@ View.prototype.setStatus = function(message, type) {
 };
 
 View.prototype.setBusy = function(busy) {
-    busy = !!busy;
-    this._busy = busy;
     var buttons = document.getElementsByTagName("button");
-    var i;
-    for (i = 0; i < buttons.length; i++) {
+    var index;
+    this._busy = !!busy;
+
+    for (index = 0; index < buttons.length; index += 1) {
         if (busy) {
-            if (buttons[i].getAttribute("data-was-disabled") === null) {
-                buttons[i].setAttribute("data-was-disabled", buttons[i].disabled ? "true" : "false");
+            if (buttons[index].getAttribute("data-was-disabled") === null) {
+                buttons[index].setAttribute("data-was-disabled", buttons[index].disabled ? "true" : "false");
             }
-            buttons[i].disabled = true;
+            buttons[index].disabled = true;
         } else {
-            var wasDisabled = buttons[i].getAttribute("data-was-disabled");
-            if (wasDisabled !== null) {
-                buttons[i].disabled = wasDisabled === "true";
-                buttons[i].removeAttribute("data-was-disabled");
+            var previous = buttons[index].getAttribute("data-was-disabled");
+            if (previous !== null) {
+                buttons[index].disabled = previous === "true";
+                buttons[index].removeAttribute("data-was-disabled");
             }
         }
     }
+
     document.getElementById("app").className = busy ? "busy" : "";
-    if (!busy) this._rebuildFocusables();
+    if (!busy) {
+        this._rebuildFocusables();
+    }
 };
 
 View.prototype._rebuildFocusables = function() {
     var previous = this._focusables[this._focusIndex];
     var nodes = document.querySelectorAll("button:not([disabled]), input:not([disabled])");
-    this._focusables = [];
-    var i;
-    for (i = 0; i < nodes.length; i++) this._focusables.push(nodes[i]);
+    var index;
 
-    var nextIndex = previous ? this._focusables.indexOf(previous) : -1;
-    this._focusIndex = nextIndex >= 0 ? nextIndex : 0;
-    if (this._focusables[this._focusIndex]) this._focusables[this._focusIndex].focus();
+    this._focusables = [];
+    for (index = 0; index < nodes.length; index += 1) {
+        this._focusables.push(nodes[index]);
+    }
+
+    var previousIndex = previous ? this._focusables.indexOf(previous) : -1;
+    this._focusIndex = previousIndex >= 0 ? previousIndex : 0;
+    if (this._focusables[this._focusIndex]) {
+        this._focusables[this._focusIndex].focus();
+    }
 };
 
 View.prototype._focusCurrent = function() {
     var element = this._focusables[this._focusIndex];
-    if (!element) return;
-    element.focus();
-    if (element.scrollIntoView) element.scrollIntoView(false);
+    if (element) {
+        element.focus();
+        if (element.scrollIntoView) {
+            element.scrollIntoView(false);
+        }
+    }
 };
 
 View.prototype._bindNavigation = function() {
     var self = this;
     document.addEventListener("keydown", function(event) {
         var key = event.keyCode;
-        if (key !== 37 && key !== 38 && key !== 39 && key !== 40 && key !== 13) return;
+        if (key !== 37 && key !== 38 && key !== 39 && key !== 40 && key !== 13) {
+            return;
+        }
 
         var active = document.activeElement;
-        if (active && active.tagName === "INPUT" && (key === 37 || key === 39 || key === 13)) {
+        if (active && active.tagName === "INPUT") {
             if (key === 13) {
                 event.preventDefault();
                 document.getElementById("btn-add").click();
             }
+            if (key === 37 || key === 39) {
+                return;
+            }
+        }
+
+        if (!self._focusables.length) {
             return;
         }
 
-        if (!self._focusables.length) return;
         event.preventDefault();
-
         if (key === 13) {
             self._focusables[self._focusIndex].click();
             return;
