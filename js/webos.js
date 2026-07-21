@@ -1,33 +1,61 @@
 // webOS 4 / Chromium 53 compatible platform adapter.
 var APP_DIR = window.location.pathname.replace(/\/[^/]+$/, "");
 var MANAGER_PATH = APP_DIR + "/assets/manager.sh";
+var SERVICE_TIMEOUT_MS = 180000;
 
 function WebOSService() {}
 
 WebOSService.prototype.luna = function(service, params) {
     return new Promise(function(resolve, reject) {
+        var bridge;
+        var settled = false;
+        var timeout;
+
+        function finish(callback, value) {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            clearTimeout(timeout);
+            callback(value);
+        }
+
         if (typeof PalmServiceBridge === "undefined") {
             reject("PalmServiceBridge is unavailable. Run this app on a rooted webOS TV.");
             return;
         }
 
-        var bridge = new PalmServiceBridge();
+        bridge = new PalmServiceBridge();
+        timeout = setTimeout(function() {
+            finish(reject, "The TV service did not respond within three minutes.");
+        }, SERVICE_TIMEOUT_MS);
+
         bridge.onservicecallback = function(message) {
             var response;
+            var errorText;
             try {
                 response = JSON.parse(message);
             } catch (error) {
-                reject("Invalid service response: " + message);
+                finish(reject, "Invalid service response: " + message);
                 return;
             }
 
             if (response.returnValue) {
-                resolve(response);
+                finish(resolve, response);
             } else {
-                reject(response.errorText || response.stderrString || "Service call failed");
+                errorText = response.errorText || "Service call failed";
+                if (response.stderrString && errorText.indexOf(response.stderrString) === -1) {
+                    errorText += "\n" + response.stderrString;
+                }
+                finish(reject, errorText);
             }
         };
-        bridge.call(service, JSON.stringify(params || {}));
+
+        try {
+            bridge.call(service, JSON.stringify(params || {}));
+        } catch (error) {
+            finish(reject, error.message || String(error));
+        }
     });
 };
 
@@ -63,7 +91,10 @@ WebOSService.prototype.addUrl = function(url) {
     var encoded;
 
     if (typeof url !== "string" || !/^https?:\/\//i.test(url)) {
-        return Promise.reject("Enter a direct http:// or https:// GIF URL.");
+        return Promise.reject("Enter a direct http:// or https:// image URL.");
+    }
+    if (url.length > 8192 || /[\x00-\x1F\x7F]/.test(url)) {
+        return Promise.reject("The URL is too long or contains control characters.");
     }
 
     try {
@@ -100,7 +131,8 @@ WebOSService.prototype.setOption = function(key, value) {
     var validators = {
         mode: /^(ordered|shuffle)$/,
         duration: /^\d{5,6}$/,
-        fit: /^(crop|fit|stretch)$/
+        fit: /^(crop|fit|stretch)$/,
+        filter: /^(smooth|pixel)$/
     };
 
     if (!validators[key] || !validators[key].test(String(value))) {

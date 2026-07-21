@@ -1,13 +1,13 @@
 {
   "id": "com.evelyn.webosgifplaylist",
-  "version": "0.1.1",
+  "version": "0.2.1",
   "type": "web",
   "main": "index.html",
-  "title": "GIF Playlist",
+  "title": "Screensaver Playlist",
   "icon": "assets/idlegif80.png",
   "largeIcon": "assets/idlegif130.png",
   "vendor": "EvelynLimaB",
   "resolution": "1920x1080",
   "iconColor": "#111111",
-  "appDescription": "Rotating local GIF screensaver playlist for rooted LG webOS TVs"
+  "appDescription": "Rotating local animated and still image screensaver playlist for rooted LG webOS TVs"
 }

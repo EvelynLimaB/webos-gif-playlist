@@ -1,10 +1,8 @@
 *.ipk
-test/
+*.manifest.json
+dist/
+package-audit/
 .env
-assets/screensaver.gif
-assets/screensaver.mp4
-assets/screensaver_sdr.mp4
-assets/icon.png
-assets/largeIcon.png
-store-description.md
-org.oted.idlegif.yml
+.DS_Store
+*.swp
+*.tmp

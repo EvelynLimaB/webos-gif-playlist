@@ -22,6 +22,9 @@ View.prototype._bindStaticControls = function() {
     document.getElementById("btn-fit").addEventListener("click", function() {
         if (self._callbacks.fit) { self._callbacks.fit(); }
     });
+    document.getElementById("btn-filter").addEventListener("click", function() {
+        if (self._callbacks.filter) { self._callbacks.filter(); }
+    });
     document.getElementById("btn-duration").addEventListener("click", function() {
         if (self._callbacks.duration) { self._callbacks.duration(); }
     });
@@ -53,6 +56,7 @@ View.prototype.onRemove = function(callback) { this._callbacks.remove = callback
 View.prototype.onMove = function(callback) { this._callbacks.move = callback; };
 View.prototype.onMode = function(callback) { this._callbacks.mode = callback; };
 View.prototype.onFit = function(callback) { this._callbacks.fit = callback; };
+View.prototype.onFilter = function(callback) { this._callbacks.filter = callback; };
 View.prototype.onDuration = function(callback) { this._callbacks.duration = callback; };
 View.prototype.onRefresh = function(callback) { this._callbacks.refresh = callback; };
 View.prototype.onCheck = function(callback) { this._callbacks.check = callback; };
@@ -72,11 +76,21 @@ View.prototype._humanBytes = function(bytes) {
     return bytes + " B";
 };
 
+View.prototype._formatName = function(format) {
+    return ({
+        gif: "GIF",
+        png: "PNG/APNG",
+        jpg: "JPEG",
+        webp: "WebP"
+    })[format] || String(format || "Unknown").toUpperCase();
+};
+
 View.prototype.render = function(state, items) {
     var indicator = document.getElementById("enabled-indicator");
     var enabledText = document.getElementById("value-enabled");
     var enabled = state.enabled === "yes";
     var autostart = state.autostart === "yes";
+    var maxItems = parseInt(state.maxItems || "24", 10) || 24;
 
     indicator.className = enabled ? "indicator enabled" : "indicator disabled";
     if (enabled && autostart) {
@@ -88,11 +102,12 @@ View.prototype.render = function(state, items) {
     }
 
     document.getElementById("value-target").textContent = state.target || "Not found";
-    document.getElementById("value-count").textContent = items.length + " / 12 · " + this._humanBytes(parseInt(state.bytes || "0", 10) || 0);
+    document.getElementById("value-count").textContent = items.length + " / " + maxItems + " · " + this._humanBytes(parseInt(state.bytes || "0", 10) || 0);
     document.getElementById("btn-mode").textContent = state.mode === "shuffle" ? "Order: Shuffle" : "Order: Sequential";
     document.getElementById("btn-fit").textContent = "Scaling: " + ({crop: "Crop", fit: "Fit", stretch: "Stretch"}[state.fit] || "Crop");
+    document.getElementById("btn-filter").textContent = state.filter === "pixel" ? "Filtering: Pixel" : "Filtering: Smooth";
     document.getElementById("btn-duration").textContent = "Switch every: " + Math.round((parseInt(state.duration, 10) || 30000) / 1000) + "s";
-    document.getElementById("btn-add").disabled = items.length >= 12;
+    document.getElementById("btn-add").disabled = items.length >= maxItems;
 
     this._renderPlaylist(items);
     this._rebuildFocusables();
@@ -110,7 +125,7 @@ View.prototype._renderPlaylist = function(items) {
     if (!items.length) {
         var empty = document.createElement("div");
         empty.className = "empty";
-        empty.textContent = "No GIFs downloaded yet.";
+        empty.textContent = "No images downloaded yet.";
         container.appendChild(empty);
         return;
     }
@@ -131,7 +146,7 @@ View.prototype._renderPlaylist = function(items) {
             name.textContent = item.id;
             var size = document.createElement("div");
             size.className = "item-size";
-            size.textContent = self._humanBytes(item.bytes);
+            size.textContent = self._formatName(item.format) + " · " + item.dimensions + " · " + self._humanBytes(item.bytes);
             details.appendChild(name);
             details.appendChild(size);
 
@@ -244,6 +259,7 @@ View.prototype._bindNavigation = function() {
             if (key === 13) {
                 event.preventDefault();
                 document.getElementById("btn-add").click();
+                return;
             }
             if (key === 37 || key === 39) {
                 return;

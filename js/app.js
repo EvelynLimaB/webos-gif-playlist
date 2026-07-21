@@ -9,7 +9,9 @@ function App() {
         bytes: "0",
         mode: "ordered",
         duration: "30000",
-        fit: "crop"
+        fit: "crop",
+        filter: "smooth",
+        maxItems: "24"
     };
     this.items = [];
     this._wireCallbacks();
@@ -19,13 +21,13 @@ App.prototype._wireCallbacks = function() {
     var self = this;
 
     this.view.onAdd(function(url) {
-        self._run("Downloading and validating GIF…", function() {
+        self._run("Downloading and validating image…", function() {
             return self.webos.addUrl(url);
         }, true);
     });
 
     this.view.onRemove(function(id) {
-        self._run("Removing GIF…", function() {
+        self._run("Removing image…", function() {
             return self.webos.remove(id);
         }, true);
     });
@@ -52,8 +54,15 @@ App.prototype._wireCallbacks = function() {
         }, true);
     });
 
+    this.view.onFilter(function() {
+        var next = self.state.filter === "pixel" ? "smooth" : "pixel";
+        self._run("Updating scaling filter…", function() {
+            return self.webos.setOption("filter", next);
+        }, true);
+    });
+
     this.view.onDuration(function() {
-        var durations = [10000, 20000, 30000, 60000, 120000];
+        var durations = [10000, 20000, 30000, 60000, 120000, 300000];
         var current = parseInt(self.state.duration, 10);
         var index = durations.indexOf(current);
         var next = durations[(index + 1) % durations.length];
@@ -105,7 +114,7 @@ App.prototype._wireCallbacks = function() {
     this.view.onReset(function() {
         var shouldReset = true;
         if (window.confirm) {
-            shouldReset = window.confirm("Remove every downloaded GIF and restore the stock screensaver?");
+            shouldReset = window.confirm("Remove every local image and restore the stock screensaver?");
         }
         if (shouldReset) {
             self._run("Resetting playlist data…", function() {
@@ -157,7 +166,9 @@ App.prototype._parseItems = function(text) {
             if (fields[0]) {
                 items.push({
                     id: fields[0],
-                    bytes: parseInt(fields[1] || "0", 10) || 0
+                    bytes: parseInt(fields[1] || "0", 10) || 0,
+                    format: fields[2] || "unknown",
+                    dimensions: fields[3] || "unknown"
                 });
             }
         }
@@ -167,10 +178,19 @@ App.prototype._parseItems = function(text) {
 
 App.prototype._run = function(message, operation, refreshAfter) {
     var self = this;
+    var promise;
     this.view.setBusy(true);
     this.view.setStatus(message);
 
-    operation().then(function(output) {
+    try {
+        promise = operation();
+    } catch (error) {
+        this.view.setBusy(false);
+        this.view.setStatus(this._errorText(error), "err");
+        return;
+    }
+
+    promise.then(function(output) {
         self.view.setStatus(String(output || "Done.").trim(), "ok");
         if (refreshAfter) {
             return self.refresh(true);
@@ -202,11 +222,11 @@ App.prototype.refresh = function(keepStatus) {
             }
         }
         self.items = self._parseItems(results[1]);
+        self.view.setBusy(false);
         self.view.render(self.state, self.items);
         if (!keepStatus) {
             self.view.setStatus("Ready.", "ok");
         }
-        self.view.setBusy(false);
     }).catch(function(error) {
         self.view.setBusy(false);
         self.view.setStatus(self._errorText(error), "err");

@@ -2,15 +2,15 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>GIF Playlist</title>
+  <title>Screensaver Playlist</title>
   <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
   <div id="app">
     <header class="app-header">
       <div>
-        <h1>GIF Playlist</h1>
-        <p class="sub">Built for rooted LG webOS 4.x TVs</p>
+        <h1>Screensaver Playlist</h1>
+        <p class="sub">Local animated and still images for rooted LG webOS 4.x TVs</p>
       </div>
       <div id="enabled-indicator" class="indicator disabled">
         <span id="value-enabled">Disabled</span>
@@ -24,17 +24,18 @@
       </div>
       <div class="summary-item">
         <span class="label">Playlist</span>
-        <span id="value-count" class="value">0 / 12</span>
+        <span id="value-count" class="value">0 / 24</span>
       </div>
     </section>
 
     <section class="panel add-panel">
-      <h2>Add a direct GIF URL</h2>
+      <h2>Add a direct media URL</h2>
       <div class="input-row">
-        <input type="text" id="url-input" placeholder="https://example.com/animation.gif" spellcheck="false" autocomplete="off">
+        <input type="text" id="url-input" placeholder="https://example.com/image.gif" spellcheck="false" autocomplete="off">
         <button id="btn-add" class="primary">Download and add</button>
       </div>
-      <p class="hint">GIF87a/GIF89a only. Up to 15 MiB, 1920×1920 and 2.07 megapixels per item.</p>
+      <p class="hint">GIF, PNG/APNG, JPEG, or WebP. Actual file bytes are detected; the URL extension does not matter. Up to 32 MiB and 1920×1920 / 2.07 megapixels per item.</p>
+      <p class="hint">Personal files can be copied from a PC over SSH with the repository's tools/send-media.sh helper.</p>
     </section>
 
     <section class="panel settings-panel">
@@ -42,13 +43,14 @@
       <div class="button-row">
         <button id="btn-mode">Order: Sequential</button>
         <button id="btn-fit">Scaling: Crop</button>
+        <button id="btn-filter">Filtering: Smooth</button>
         <button id="btn-duration">Switch every: 30s</button>
       </div>
     </section>
 
     <section class="panel playlist-panel">
       <div class="section-header">
-        <h2>Downloaded GIFs</h2>
+        <h2>Local images</h2>
         <button id="btn-refresh">Refresh</button>
       </div>
       <div id="playlist"></div>
