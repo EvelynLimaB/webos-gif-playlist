@@ -21,42 +21,37 @@ jobs:
       - name: Install ares-cli
         run: npm install -g @webosose/ares-cli
 
+      - name: Validate shell scripts
+        run: |
+          sh -n assets/manager.sh
+          sh -n assets/install.sh
+          sh -n assets/uninstall.sh
+
       - name: Build IPK
-        run: |
-          ares-package . \
-            -e ".git" \
-            -e ".env" \
-            -e "*.ipk" \
-            -e "Makefile" \
-            -e "AGENTS.md" \
-            -e "store-description.md" \
-            -e "org.oted.idlegif.yml" \
-            -e "test" \
-            -e "default.gif" \
-            -e "default1.gif" \
-            -e "default2.gif" \
-            -e "default3.gif" \
-            -e "default4.gif" \
-            -e "default_download.gif"
+        run: make package
 
-      - name: Get version
-        id: version
-        run: echo "version=$(node -p "require('./appinfo.json').version")" >> $GITHUB_OUTPUT
-
-      - name: Generate manifest
+      - name: Get package metadata
+        id: metadata
         run: |
-          IPK="org.oted.idlegif_${{ steps.version.outputs.version }}_all.ipk"
+          echo "version=$(node -p "require('./appinfo.json').version")" >> "$GITHUB_OUTPUT"
+          echo "app_id=$(node -p "require('./appinfo.json').id")" >> "$GITHUB_OUTPUT"
+
+      - name: Generate Homebrew manifest
+        run: |
+          APP_ID="${{ steps.metadata.outputs.app_id }}"
+          VERSION="${{ steps.metadata.outputs.version }}"
+          IPK="${APP_ID}_${VERSION}_all.ipk"
           SHA256=$(sha256sum "$IPK" | cut -d' ' -f1)
-          cat > org.oted.idlegif.manifest.json <<EOF
+          cat > "${APP_ID}.manifest.json" <<EOF
           {
-            "id": "org.oted.idlegif",
-            "version": "${{ steps.version.outputs.version }}",
+            "id": "${APP_ID}",
+            "version": "${VERSION}",
             "type": "web",
-            "title": "Idlegif",
-            "appDescription": "GIF screensaver for rooted LG webOS TVs",
-            "iconUri": "https://github.com/Oted/idlegif/raw/main/idlegif.png",
-            "sourceUrl": "https://github.com/Oted/idlegif",
-            "ipkUrl": "https://github.com/Oted/idlegif/releases/download/${{ github.ref_name }}/${IPK}",
+            "title": "GIF Playlist",
+            "appDescription": "Rotating local GIF screensaver playlist for rooted LG webOS TVs",
+            "iconUri": "https://raw.githubusercontent.com/EvelynLimaB/webos-gif-playlist/main/assets/idlegif130.png",
+            "sourceUrl": "https://github.com/EvelynLimaB/webos-gif-playlist",
+            "ipkUrl": "https://github.com/EvelynLimaB/webos-gif-playlist/releases/download/${{ github.ref_name }}/${IPK}",
             "rootRequired": true,
             "ipkHash": { "sha256": "${SHA256}" }
           }
@@ -66,6 +61,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            org.oted.idlegif_${{ steps.version.outputs.version }}_all.ipk
-            org.oted.idlegif.manifest.json
+            com.evelyn.webosgifplaylist_${{ steps.metadata.outputs.version }}_all.ipk
+            com.evelyn.webosgifplaylist.manifest.json
           generate_release_notes: true
