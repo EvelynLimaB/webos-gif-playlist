@@ -30,7 +30,7 @@ LOCK_HELD=no
 
 LIB_DIR="$APP_DIR/assets/lib"
 
-for module in core media commands; do
+for module in core media batch commands; do
     module_path="$LIB_DIR/$module.sh"
     if [ ! -r "$module_path" ]; then
         echo "ERROR: required manager module is missing: $module_path" >&2
@@ -40,6 +40,8 @@ for module in core media commands; do
         core) # shellcheck source=assets/lib/core.sh
             . "$module_path" ;;
         media) # shellcheck source=assets/lib/media.sh
+            . "$module_path" ;;
+        batch) # shellcheck source=assets/lib/batch.sh
             . "$module_path" ;;
         commands) # shellcheck source=assets/lib/commands.sh
             . "$module_path" ;;
@@ -61,6 +63,7 @@ case "$command" in
     list) list_items ;;
     add) add_url "${2:-}" ;;
     import) import_file "${2:-}" ;;
+    import-dir) import_directory "${2:-}" ;;
     remove) remove_item "${2:-}" ;;
     move) move_item "${2:-}" "${3:-}" ;;
     set) set_option "${2:-}" "${3:-}" ;;
