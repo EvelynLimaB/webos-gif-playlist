@@ -1,6 +1,6 @@
 {
   "id": "com.evelyn.webosgifplaylist",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "type": "web",
   "main": "index.html",
   "title": "Screensaver Playlist",
