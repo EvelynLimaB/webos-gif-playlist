@@ -16,6 +16,7 @@ A local, rotating screensaver playlist for animated and still images. Media is d
 - Maximum TV-side logical dimensions: 1920 pixels per axis and 2,073,600 pixels total.
 - Sequential or shuffled rotation at 10, 20, 30, 60, 120, or 300 seconds.
 - Crop, fit, or stretch scaling, with smooth or pixel filtering.
+- In-app update checks with manual installation and an optional automatic-update mode.
 - Temporary activation, explicit boot activation, safe disable, and complete reset.
 - Protection against replacing or unmounting a foreign screensaver override.
 
@@ -43,19 +44,21 @@ make check
 make package
 ```
 
-Install `com.evelyn.webosgifplaylist_0.2.3_all.ipk` with webOS Dev Manager or `ares-install`, then open **Screensaver Playlist** and run **Compatibility check**.
+Install `com.evelyn.webosgifplaylist_0.2.4_all.ipk` with webOS Dev Manager or `ares-install`, then open **Screensaver Playlist** and run **Compatibility check**.
 
 Package installation only initializes/migrates local data. It does **not** activate the override or create a boot hook. Activation is always explicit.
 
 A valid compatibility result must show every dependency as `ok`, including `stat`, `mountsFile=ok`, a downloader, and the expected `/qml/main.qml` target.
 
-### Homebrew Channel updates
+### In-app and Homebrew Channel updates
 
-A version tag such as `v0.2.3` triggers the release workflow. The workflow verifies that the tag matches `appinfo.json`, runs the full test suite, builds and audits the IPK, generates `com.evelyn.webosgifplaylist.manifest.json` with the IPK SHA-256, and publishes both files to a GitHub Release.
+A version tag such as `v0.2.4` triggers the release workflow. The workflow verifies that the tag matches `appinfo.json`, runs the full test suite, builds and audits the IPK, generates `com.evelyn.webosgifplaylist.manifest.json` with the IPK SHA-256, and publishes both files to a GitHub Release.
 
-The central Homebrew Channel entry uses the latest-release manifest URL. Once the app is accepted into `webosbrew/apps-repo`, Homebrew Channel detects newer versions and exposes its normal **Update** action. Updates are user-approved rather than silently installed, and existing playlist data remains in `/var/lib/webosbrew/gif-playlist/`.
+The app checks that official latest-release manifest when it opens. **Check now** performs the same request manually, and **Install update** delegates installation to the Homebrew Channel service. Before installation, the app rejects manifests with an unexpected package ID, source repository, version, package URL, or SHA-256. Homebrew Channel downloads the IPK, verifies that SHA-256 again, and installs it through the platform package service.
 
-The prepared central-repository metadata is stored at `store/com.evelyn.webosgifplaylist.yml`.
+**Automatic updates** are disabled by default. Enabling the option is a persistent user opt-in: when the app opens and finds a newer verified release, it starts the same Homebrew-managed installation automatically. Package installation may close the running app. Reopen it afterward; playlist data, settings, activation state, and the boot hook remain under `/var/lib/webosbrew/gif-playlist/` and `/var/lib/webosbrew/init.d/`.
+
+Once accepted into `webosbrew/apps-repo`, Homebrew Channel also detects newer versions through its normal store entry and exposes its own **Update** action. The prepared central-repository metadata is stored at `store/com.evelyn.webosgifplaylist.yml`.
 
 ## Add media
 
@@ -136,6 +139,9 @@ TV-side folder import cannot resize media. Use the PC helper for automatic adapt
 
 ## Controls
 
+- **Check now:** retrieve and validate the official latest-release manifest.
+- **Install update:** install a newer verified package through Homebrew Channel.
+- **Automatic updates:** opt in or out of installing newer verified releases when the app opens.
 - **Apply temporarily:** activate until reboot without creating a startup hook.
 - **Enable at boot:** activate now and create the Homebrew startup hook.
 - **Test screensaver:** apply temporarily and request the system screensaver immediately.
@@ -168,13 +174,16 @@ The app bind-mounts a generated QML file over the system entry point; it never o
 6. Test static WebP, animated WebP, and APNG; record full animation, first-frame-only behavior, or decoder failure.
 7. Add and remove media while the override is active.
 8. Confirm five ordered transitions at 10 seconds and verify shuffle avoids immediate repeats.
-9. Confirm malformed/unsupported files are rejected without changing valid imported items.
-10. Confirm applying while another screensaver override is mounted is refused.
-11. Disable and verify the stock LG screensaver returns.
-12. Apply temporarily, reboot with Quick Start+ disabled, and verify the override does not persist.
-13. Enable at boot, perform a full reboot, and verify persistence.
-14. Run for at least one hour while watching for stutter, black frames, restarts, memory pressure, and remote responsiveness.
-15. Reset all data and confirm the stock screensaver and empty data state.
+9. Confirm GIFs restart after still images for at least two complete playlist cycles.
+10. Confirm malformed/unsupported files are rejected without changing valid imported items.
+11. Confirm applying while another screensaver override is mounted is refused.
+12. Disable and verify the stock LG screensaver returns.
+13. Apply temporarily, reboot with Quick Start+ disabled, and verify the override does not persist.
+14. Enable at boot, perform a full reboot, and verify persistence.
+15. Check for an update with automatic updates disabled; verify no installation starts without approval.
+16. Enable automatic updates against a test release and verify Homebrew Channel checks the hash, updates the package, preserves data, and reports the new installed version after reopening.
+17. Run for at least one hour while watching for stutter, black frames, restarts, memory pressure, and remote responsiveness.
+18. Reset all data and confirm the stock screensaver and empty data state.
 
 ## Recovery
 
@@ -203,7 +212,7 @@ reboot
 ## Development
 
 ```bash
-make check            # shell, manager, batch, helper, and UI-contract tests
+make check            # shell, manager, batch, helper, update-policy, and UI-contract tests
 make package          # minimal IPK payload
 make audit-package    # inspect the built IPK
 make test-tv          # explicitly trigger the TV screensaver
