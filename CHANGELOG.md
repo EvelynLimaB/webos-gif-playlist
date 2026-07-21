@@ -4,6 +4,7 @@ All notable changes are documented here. The project is pre-release and follows 
 
 ## [Unreleased]
 
+- Rebase the v0.2.1 candidate onto the physically confirmed v0.1.1 GIF baseline now on `main`.
 - Physical validation of PNG, JPEG, WebP, APNG, reboot persistence, and long-running stability.
 
 ## [0.2.1] - 2026-07-21
