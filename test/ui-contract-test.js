@@ -53,5 +53,13 @@ if (html.indexOf('<script src="js/update.js"></script>') === -1) {
 if (updater.indexOf("UpdatePolicy.validateManifest") === -1 || updater.indexOf("new UpdateController") === -1) {
     throw new Error("in-app updater controller is incomplete");
 }
+if (updater.indexOf("window.confirm") !== -1) {
+    throw new Error("updater still relies on the unreliable native confirmation dialog");
+}
+["autoConfirmArmed", "installConfirmArmed", "Press again to enable", "Press again to install"].forEach(function(token) {
+    if (updater.indexOf(token) === -1) {
+        throw new Error("missing in-app updater confirmation token: " + token);
+    }
+});
 
 console.log("UI contract test passed");
