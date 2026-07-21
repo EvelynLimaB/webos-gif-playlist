@@ -2,25 +2,32 @@
 
 ## Components
 
-`index.html`, `css/app.css`, and `js/` form a Chromium 53-compatible TV interface. `js/webos.js` is the only browser-to-platform adapter: it calls the Homebrew Channel root execution service and invokes `assets/manager.sh`.
+`index.html`, `css/app.css`, and `js/` form a Chromium 53-compatible TV interface. `js/webos.js` is the browser-to-platform adapter. It invokes `assets/manager.sh` through the Homebrew Channel service.
 
-`assets/manager.sh` is the stable command entry point. Its sourced modules separate lifecycle/QML (`assets/lib/core.sh`), media validation/import (`assets/lib/media.sh`), and playlist/status commands (`assets/lib/commands.sh`). Together they are the source of truth for persistent state, validation, activation, boot persistence, and recovery. `tools/send-media.sh` is an unprivileged PC-side convenience wrapper around SSH and the manager's public commands.
+The manager is split into modules:
+
+- `assets/lib/core.sh`: storage, generated QML, mount ownership, activation, and boot behavior.
+- `assets/lib/media.sh`: URL validation, media signatures, dimensions, limits, and single-item imports.
+- `assets/lib/batch.sh`: whole-folder and URL-list coordination.
+- `assets/lib/commands.sh`: playlist, settings, status, preflight, disable, and reset commands.
+
+`tools/send-media.sh` is an optional PC-side SSH helper. The TV-side manager remains the stable public interface.
 
 ## Persistent layout
 
 ```text
 /var/lib/webosbrew/gif-playlist/
-├── items/                   imported source files
-├── playlist.txt             ordered item identifiers
-├── settings.conf            playback settings
-├── screensaver-runtime.qml  generated bind-mount source
-├── active-target            diagnostic record
-└── .manager-lock/           transient mutation lock
+├── items/
+├── playlist.txt
+├── settings.conf
+├── screensaver-runtime.qml
+├── active-target
+└── .manager-lock/
 ```
 
-The `gif-playlist` directory and `55-gif-playlist` hook names are historical compatibility interfaces retained from v0.1.x.
+The historical data directory and startup-hook names remain compatibility interfaces for upgrades.
 
-## Manager command contract
+## Manager commands
 
 Read operations:
 
@@ -30,47 +37,49 @@ Read operations:
 
 Mutating operations:
 
-- `init`, `add BASE64_URL`, `import FILE`
-- `remove ID`, `move ID up|down`
+- `init`
+- `add BASE64_URL`
+- `import FILE`
+- `import-dir DIRECTORY`
+- `remove ID`
+- `move ID up|down`
 - `set mode|duration|fit|filter VALUE`
 - `generate`, `apply`, `enable`, `boot`
 - `disable`, `uninstall`, `reset`
 
-Machine-readable output uses `key=value`. `list` emits `id<TAB>bytes<TAB>format<TAB>dimensions`. New fields may be appended; existing meanings should not change without migration and a versioned interface plan.
+`import-dir` scans one directory level. Supported image files are sent through the normal `import` command. Text files are parsed as URL lists and sent through `add`. Each child operation acquires its own manager lock and commits independently. The batch coordinator continues after item-level failures and prints a final `batch_*` summary.
 
-## Import pipeline
+Machine-readable status uses `key=value`. Playlist rows use `id<TAB>bytes<TAB>format<TAB>dimensions`.
 
-1. Serialize the operation with an atomic directory lock.
-2. Download or copy into an app-owned `.part` file.
-3. Enforce per-item, total-storage, and item-count limits.
-4. Detect GIF, PNG, JPEG, or WebP from its signature.
-5. Parse and validate logical dimensions without decoding the full image.
-6. Move the unchanged source bytes into `items/`.
-7. Update `playlist.txt` and regenerate QML as one logical transaction.
-8. Roll back the index and media file if QML regeneration fails.
+## Single-item import pipeline
 
-The firmware decoder remains the final authority. A structurally accepted WebP/APNG can still fail during QML playback when the TV lacks the relevant plugin.
+1. Acquire the atomic manager lock.
+2. Copy or download into an app-owned temporary file.
+3. Enforce item-count, per-file, and total-storage limits.
+4. Detect the format from file bytes.
+5. Parse and validate logical dimensions.
+6. Move the unchanged source into `items/`.
+7. Update the playlist and generated QML.
+8. Roll back the playlist and stored file when QML generation fails.
+
+The firmware decoder remains the final authority. A structurally valid WebP or APNG can still fail at playback when the required firmware plugin is absent.
 
 ## QML and bind mounts
 
-The generated file uses `WebOSWindow` with `_WEBOS_WINDOW_TYPE_SCREENSAVER` and a single Qt Quick `AnimatedImage`. It rotates local `file://` URLs and skips decoder failures after a short delay.
+The generated QML uses a `WebOSWindow` screensaver and Qt Quick `AnimatedImage`. It rotates local `file://` sources and advances after decoder failures.
 
-The manager detects the supported LG entry point, then bind-mounts `screensaver-runtime.qml` over it. It never writes to the original LG file. Updates rewrite the runtime file in place to preserve the inode referenced by an active bind mount.
+The manager bind-mounts the generated runtime file over a detected LG screensaver entry point. It does not overwrite the original system QML. Runtime updates preserve the inode used by an active bind mount.
 
-Before apply/disable, mount ownership is checked in two ways:
-
-1. compare the `/proc/mounts` source path when available;
-2. compare source and target device/inode identities using `stat`.
-
-A mounted target that cannot be identified as this project's runtime is treated as foreign and is never replaced or unmounted.
+Before applying or disabling, the manager verifies mount ownership through mount-source information and source/target file identity. A mount that cannot be identified as this app's own runtime is treated as foreign and left untouched.
 
 ## Boot behavior
 
-`enable` applies the override and writes an executable Homebrew `run-parts` hook. `apply` does not create the hook. Package installation calls only `init`; users must activate explicitly. The hook removes itself when the application package is gone.
+`apply` activates temporarily. `enable` also creates an executable Homebrew startup hook. Package installation performs initialization and migration only; it does not activate the override.
 
 ## Compatibility constraints
 
-- The TV shell is treated as BusyBox/POSIX `sh`, not Bash.
-- The web app targets Chromium 53 and avoids modern syntax and APIs.
-- QML targets QtQuick 2.4 and firmware-provided image plugins.
-- The primary validated screen is 1920×1080.
+- BusyBox-compatible POSIX `sh`.
+- Chromium 53-compatible JavaScript.
+- Conservative CSS without Grid, custom properties, or `gap`.
+- QtQuick 2.4 and firmware-provided decoder plugins.
+- Primary target resolution: 1920×1080.
