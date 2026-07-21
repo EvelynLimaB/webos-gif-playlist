@@ -1,82 +1,143 @@
-# Idlegif
+# GIF Playlist for LG webOS
 
-<div align="center">
-<a href="https://github.com/Oted/idlegif/releases/latest"><img src="https://img.shields.io/github/v/release/Oted/idlegif?style=flat-square" alt="Latest release"/></a>
-<a href="https://github.com/Oted/idlegif/releases"><img src="https://img.shields.io/github/downloads/Oted/idlegif/total?style=flat-square" alt="Downloads"/></a>
-</div>
+A rooted-TV screensaver that downloads several GIFs, stores them locally, and rotates through them sequentially or randomly.
 
-Replace the LG webOS screensaver with a looping GIF — browse pixel art and animations via GIPHY or paste any direct GIF URL.
+This fork is being built and tested first for:
 
-Requires a rooted TV via [Homebrew Channel](https://github.com/webosbrew/webos-homebrew-channel).
+- **TV:** LG 43LM6300PSB
+- **Firmware:** 05.40.97
+- **webOS:** 4.10.2 / webOS 4.x generation
+- **System target:** `/usr/palm/applications/com.webos.app.screensaver/qml/main.qml`
+- **Root environment:** webOS Homebrew Channel
 
-> **Disclaimer:** Modifies a system screensaver file via bind-mount. Use at your own risk.
+The project is not considered stable until the package passes physical testing on that exact television.
 
----
+## Current v0.1 scope
 
-## Screenshot
+- Add direct `http://` or `https://` GIF URLs.
+- Validate the GIF signature before accepting a download.
+- Store up to 12 GIFs locally, with a 25 MiB per-file limit.
+- Reorder and remove playlist entries.
+- Sequential or shuffled playback.
+- 10, 20, 30, 60, or 120 second rotation interval.
+- Crop, fit, or stretch scaling.
+- Apply the override temporarily or at every boot.
+- Restore the stock screensaver without deleting the playlist.
+- Full reset and SSH recovery commands.
+- JavaScript and CSS kept compatible with the Chromium 53-era web engine used by webOS 4.x.
 
-![Idlegif app running on an LG webOS TV](assets/screenshot.png)
+## Safety model
 
----
+The package requires root because it bind-mounts a generated QML file over the stock screensaver entry point. The original system file is not overwritten.
 
-## Installation
+Runtime files are stored under:
 
-Install via the Homebrew Channel app store, or sideload the `.ipk` from the [latest release](https://github.com/Oted/idlegif/releases/latest).
-
-After installing, open the app and select a GIF. The screensaver activates automatically when your TV idles.
-
----
-
-## Usage
-
-**First launch — no GIPHY key:** 4 selectable defaults, the URL bar at the bottom lets you input a `.gif` link and download it immediately. No API key required.
-
-**With a GIPHY API key:** Enter your key (free at [developers.giphy.com](https://developers.giphy.com)) to unlock the GIF browser. The key is saved and persists across restarts.
-
-**With SSH access:** If your TV has SSH via Homebrew Channel, you can inject the key without typing it on the TV. Close the app first if it's already open, then run:
-
-```bash
-luna-send -n 1 luna://com.webos.service.applicationManager/launch \
-  '{"id":"org.oted.idlegif","params":{"giphyApiKey":"YOUR_KEY"}}'
+```text
+/var/lib/webosbrew/gif-playlist/
 ```
 
-**Buttons:**
-- **Refresh** — fetch a new set of GIFs from GIPHY
-- **Test** — navigate to the home screen and trigger the screensaver to preview it
-- **Uninstall** — remove the screensaver override and boot hook
+The boot hook is:
 
-**Navigation:** arrow keys to move, OK to select.
-
----
-
-## Compatibility
-
-| webOS version | Targets | Status |
-|---|---|---|
-| webOS 9.x | `Clock.qml` | ✅ Confirmed |
-| webOS 5.x – 8.x | `main.qml` | 🧪 Should work |
-| webOS 3.x / 4.x | — | ❌ Not supported |
-
-
----
-
-## Building from source
-
-Requires [ares-cli](https://webostv.developer.lge.com/develop/tools/cli-installation) and Node 24.
-
-```bash
-make update   # build, install to TV, apply bind-mount, launch
-make test     # trigger screensaver (navigates home first)
-make clean    # remove .ipk artifacts
+```text
+/var/lib/webosbrew/init.d/55-gif-playlist
 ```
 
----
+Known competing screensaver hooks from Idlegif and Custom Screensaver are moved into the app data directory while GIF Playlist is active. They are restored by the app's uninstall action.
 
-## Credits
+## Build
 
+Install Node.js and the official webOS `ares-cli`, then run:
+
+```bash
+npm install -g @webosose/ares-cli
+make package
+```
+
+The result is:
+
+```text
+com.evelyn.webosgifplaylist_0.1.0_all.ipk
+```
+
+## Install on the TV
+
+Configure the TV as the `tv` target in `ares-setup-device`, then:
+
+```bash
+make install
+make apply
+make launch
+```
+
+Or install the generated `.ipk` through webOS Dev Manager/Homebrew tooling and open **GIF Playlist** from the launcher.
+
+Before enabling this app, remove or disable any other package that currently replaces the LG screensaver.
+
+## Physical test sequence for the LM6300
+
+1. Open the app and confirm the detected target ends in `/qml/main.qml`.
+2. Add one small GIF and test the screensaver.
+3. Add a second GIF and set the interval to 10 seconds.
+4. Confirm ordered rotation for at least five transitions.
+5. Confirm shuffle mode does not immediately repeat the same item.
+6. Test crop, fit, and stretch.
+7. Enable at boot and fully reboot the TV with Quick Start+ disabled.
+8. Trigger the screensaver again after reboot.
+9. Leave it running for at least one hour while observing memory stability.
+10. Disable the override and verify the stock LG screensaver returns.
+11. Re-enable and confirm the playlist is preserved.
+12. Reset all data and confirm the stock screensaver and empty state.
+
+## Recovery over SSH or Telnet
+
+Determine the installed application path, commonly:
+
+```text
+/media/developer/apps/usr/palm/applications/com.evelyn.webosgifplaylist
+```
+
+Disable the override while preserving downloaded GIFs:
+
+```bash
+sh /media/developer/apps/usr/palm/applications/com.evelyn.webosgifplaylist/assets/manager.sh disable
+```
+
+Remove the override and restore competing boot hooks:
+
+```bash
+sh /media/developer/apps/usr/palm/applications/com.evelyn.webosgifplaylist/assets/manager.sh uninstall
+```
+
+Remove all playlist data as well:
+
+```bash
+sh /media/developer/apps/usr/palm/applications/com.evelyn.webosgifplaylist/assets/manager.sh reset
+```
+
+Emergency manual recovery:
+
+```bash
+umount /usr/palm/applications/com.webos.app.screensaver/qml/main.qml 2>/dev/null || true
+rm -f /var/lib/webosbrew/init.d/55-gif-playlist
+reboot
+```
+
+## Development commands
+
+```bash
+make update   # build, install, apply, and launch
+make status   # inspect detected target and playlist settings
+make test     # trigger the system screensaver
+make disable  # restore stock screensaver, preserve data
+make reset    # restore stock screensaver and remove data
+make inspect  # open the web inspector
+```
+
+## Origin and license
+
+Based on ideas and code from:
+
+- [Oted/idlegif](https://github.com/Oted/idlegif)
 - [webosbrew/custom-screensaver](https://github.com/webosbrew/custom-screensaver)
-- [GIPHY](https://giphy.com)
 
-## License
-
-MIT
+Licensed under the MIT License. The original copyright notices remain in `LICENSE`.
