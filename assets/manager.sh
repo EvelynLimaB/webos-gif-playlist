@@ -2,576 +2,68 @@
 
 set -e
 
-SELF="$(readlink -f "$0" 2>/dev/null || echo "$0")"
-APP_DIR="${GIF_PLAYLIST_APP_DIR:-$(dirname "$(dirname "$SELF")")}" 
-DATA_DIR="${GIF_PLAYLIST_DATA_DIR:-/var/lib/webosbrew/gif-playlist}"
+SELF="$(readlink -f "$0" 2>/dev/null || printf '%s' "$0")"
+APP_DIR="${MEDIA_PLAYLIST_APP_DIR:-${GIF_PLAYLIST_APP_DIR:-$(dirname "$(dirname "$SELF")")}}"
+DATA_DIR="${MEDIA_PLAYLIST_DATA_DIR:-${GIF_PLAYLIST_DATA_DIR:-/var/lib/webosbrew/gif-playlist}}"
 ITEMS_DIR="$DATA_DIR/items"
 PLAYLIST_FILE="$DATA_DIR/playlist.txt"
 SETTINGS_FILE="$DATA_DIR/settings.conf"
 RUNTIME_QML="$DATA_DIR/screensaver-runtime.qml"
 ACTIVE_FILE="$DATA_DIR/active-target"
-INIT_DIR="${GIF_PLAYLIST_INIT_DIR:-/var/lib/webosbrew/init.d}"
+INIT_DIR="${MEDIA_PLAYLIST_INIT_DIR:-${GIF_PLAYLIST_INIT_DIR:-/var/lib/webosbrew/init.d}}"
 INIT_HOOK="$INIT_DIR/55-gif-playlist"
-MOUNTS_FILE="${GIF_PLAYLIST_MOUNTS_FILE:-/proc/mounts}"
+MOUNTS_FILE="${MEDIA_PLAYLIST_MOUNTS_FILE:-${GIF_PLAYLIST_MOUNTS_FILE:-/proc/mounts}}"
 
-SCREENSAVER_BASE="${GIF_PLAYLIST_SCREENSAVER_BASE:-/usr/palm/applications/com.webos.app.screensaver}"
+SCREENSAVER_BASE="${MEDIA_PLAYLIST_SCREENSAVER_BASE:-${GIF_PLAYLIST_SCREENSAVER_BASE:-/usr/palm/applications/com.webos.app.screensaver}}"
 MAIN_TARGET="$SCREENSAVER_BASE/qml/main.qml"
 CLOCK_TARGET="$SCREENSAVER_BASE/qml/UserInterfaceLayer/Containers/Clock.qml"
 
-MAX_ITEMS=12
-MAX_BYTES=15728640
-MAX_TOTAL_BYTES=100663296
+MAX_ITEMS=24
+MAX_BYTES=33554432
+MAX_TOTAL_BYTES=268435456
 MAX_PIXELS=2073600
 MAX_DIMENSION=1920
+MAX_URL_LENGTH=8192
+LOCK_DIR="$DATA_DIR/.manager-lock"
+LOCK_PID_FILE="$LOCK_DIR/pid"
+LOCK_HELD=no
 
-ensure_data() {
-    mkdir -p "$ITEMS_DIR" "$INIT_DIR"
-    [ -f "$PLAYLIST_FILE" ] || : > "$PLAYLIST_FILE"
-    if [ ! -f "$SETTINGS_FILE" ]; then
-        cat > "$SETTINGS_FILE" <<'SETTINGS'
-mode=ordered
-duration=30000
-fit=crop
-SETTINGS
+LIB_DIR="$APP_DIR/assets/lib"
+
+for module in core media batch commands; do
+    module_path="$LIB_DIR/$module.sh"
+    if [ ! -r "$module_path" ]; then
+        echo "ERROR: required manager module is missing: $module_path" >&2
+        exit 1
     fi
-
-    legacy_backup="$DATA_DIR/disabled-hooks"
-    if [ -d "$legacy_backup" ]; then
-        for backup in "$legacy_backup"/*; do
-            [ -e "$backup" ] || [ -L "$backup" ] || continue
-            destination="$INIT_DIR/$(basename "$backup")"
-            if [ ! -e "$destination" ] && [ ! -L "$destination" ]; then
-                mv "$backup" "$destination"
-            fi
-        done
-        rmdir "$legacy_backup" 2>/dev/null || true
-    fi
-}
-
-read_setting() {
-    key="$1"
-    fallback="$2"
-    value="$(sed -n "s/^${key}=//p" "$SETTINGS_FILE" 2>/dev/null | head -n 1)"
-    [ -n "$value" ] && printf '%s' "$value" || printf '%s' "$fallback"
-}
-
-write_settings() {
-    mode="$1"
-    duration="$2"
-    fit="$3"
-    tmp="$SETTINGS_FILE.tmp.$$"
-    {
-        printf 'mode=%s\n' "$mode"
-        printf 'duration=%s\n' "$duration"
-        printf 'fit=%s\n' "$fit"
-    } > "$tmp"
-    mv "$tmp" "$SETTINGS_FILE"
-}
-
-valid_name() {
-    case "$1" in
-        ''|*[!A-Za-z0-9._-]*) return 1 ;;
-        *) return 0 ;;
+    case "$module" in
+        core) # shellcheck source=assets/lib/core.sh
+            . "$module_path" ;;
+        media) # shellcheck source=assets/lib/media.sh
+            . "$module_path" ;;
+        batch) # shellcheck source=assets/lib/batch.sh
+            . "$module_path" ;;
+        commands) # shellcheck source=assets/lib/commands.sh
+            . "$module_path" ;;
     esac
-}
-
-playlist_count() {
-    count=0
-    while IFS= read -r name; do
-        valid_name "$name" || continue
-        [ -f "$ITEMS_DIR/$name" ] || continue
-        count=$((count + 1))
-    done < "$PLAYLIST_FILE"
-    printf '%s' "$count"
-}
-
-playlist_total_bytes() {
-    total=0
-    while IFS= read -r name; do
-        valid_name "$name" || continue
-        [ -f "$ITEMS_DIR/$name" ] || continue
-        bytes="$(wc -c < "$ITEMS_DIR/$name" | tr -d ' ')"
-        case "$bytes" in ''|*[!0-9]*) bytes=0 ;; esac
-        total=$((total + bytes))
-    done < "$PLAYLIST_FILE"
-    printf '%s' "$total"
-}
-
-detect_target() {
-    if [ -f "$MAIN_TARGET" ]; then
-        printf '%s' "$MAIN_TARGET"
-    elif [ -f "$CLOCK_TARGET" ]; then
-        printf '%s' "$CLOCK_TARGET"
-    else
-        return 1
-    fi
-}
-
-is_target_mounted() {
-    checked_target="$1"
-    [ -r "$MOUNTS_FILE" ] || return 1
-    grep -F " $checked_target " "$MOUNTS_FILE" >/dev/null 2>&1
-}
-
-write_runtime_file() {
-    source_file="$1"
-    if [ -f "$RUNTIME_QML" ]; then
-        cat "$source_file" > "$RUNTIME_QML"
-        rm -f "$source_file"
-    else
-        mv "$source_file" "$RUNTIME_QML"
-    fi
-    chmod 644 "$RUNTIME_QML"
-}
-
-generate_qml() {
-    ensure_data
-    mode="$(read_setting mode ordered)"
-    duration="$(read_setting duration 30000)"
-    fit="$(read_setting fit crop)"
-
-    case "$mode" in shuffle) shuffle=true ;; *) shuffle=false ;; esac
-    case "$duration" in ''|*[!0-9]*) duration=30000 ;; esac
-    [ "$duration" -ge 10000 ] 2>/dev/null || duration=30000
-    [ "$duration" -le 300000 ] 2>/dev/null || duration=30000
-    case "$fit" in
-        fit) fill_mode="Image.PreserveAspectFit" ;;
-        stretch) fill_mode="Image.Stretch" ;;
-        *) fill_mode="Image.PreserveAspectCrop" ;;
-    esac
-
-    tmp="$RUNTIME_QML.tmp.$$"
-    cat > "$tmp" <<EOF_QML
-// Generated by GIF Playlist. Manual edits will be overwritten.
-import QtQuick 2.4
-import Eos.Window 0.1
-import QtQuick.Window 2.2
-
-WebOSWindow {
-    id: window
-    width: 1920
-    height: 1080
-    windowType: "_WEBOS_WINDOW_TYPE_SCREENSAVER"
-    appId: "com.webos.app.screensaver"
-    title: "GIF Playlist Screensaver"
-    color: "black"
-    visible: true
-
-    property var playlist: [
-EOF_QML
-
-    first=yes
-    while IFS= read -r name; do
-        valid_name "$name" || continue
-        [ -f "$ITEMS_DIR/$name" ] || continue
-        if [ "$first" = yes ]; then
-            first=no
-        else
-            printf ',\n' >> "$tmp"
-        fi
-        printf '        "file://%s/%s"' "$ITEMS_DIR" "$name" >> "$tmp"
-    done < "$PLAYLIST_FILE"
-
-    cat >> "$tmp" <<EOF_QML
-
-    ]
-    property int currentIndex: 0
-    property bool shuffleEnabled: $shuffle
-    property int displayDuration: $duration
-    property bool imageFailed: false
-
-    function advance() {
-        if (playlist.length < 2) return;
-        var nextIndex;
-        if (shuffleEnabled) {
-            nextIndex = currentIndex;
-            while (nextIndex === currentIndex) {
-                nextIndex = Math.floor(Math.random() * playlist.length);
-            }
-        } else {
-            nextIndex = (currentIndex + 1) % playlist.length;
-        }
-        currentIndex = nextIndex;
-    }
-
-    Component.onCompleted: {
-        if (shuffleEnabled && playlist.length > 1) {
-            currentIndex = Math.floor(Math.random() * playlist.length);
-        }
-    }
-
-    Rectangle {
-        anchors.fill: parent
-        color: "black"
-    }
-
-    AnimatedImage {
-        id: animation
-        anchors.fill: parent
-        source: window.playlist.length > 0 ? window.playlist[window.currentIndex] : ""
-        fillMode: $fill_mode
-        cache: false
-        smooth: false
-        playing: true
-
-        onSourceChanged: window.imageFailed = false
-        onStatusChanged: {
-            if (status === Image.Ready) {
-                window.imageFailed = false;
-            } else if (status === Image.Error) {
-                window.imageFailed = true;
-                if (window.playlist.length > 1) {
-                    errorAdvance.restart();
-                }
-            }
-        }
-    }
-
-    Text {
-        anchors.centerIn: parent
-        visible: window.playlist.length === 0 || window.imageFailed
-        color: "#888888"
-        font.pixelSize: 42
-        text: window.playlist.length === 0 ? "GIF Playlist is empty" : "Unable to decode this GIF"
-    }
-
-    Timer {
-        id: rotation
-        interval: window.displayDuration
-        running: window.playlist.length > 1
-        repeat: true
-        onTriggered: window.advance()
-    }
-
-    Timer {
-        id: errorAdvance
-        interval: 2000
-        repeat: false
-        onTriggered: {
-            window.advance();
-            rotation.restart();
-        }
-    }
-}
-EOF_QML
-
-    write_runtime_file "$tmp"
-}
-
-disable_mounts() {
-    for mount_target in "$MAIN_TARGET" "$CLOCK_TARGET"; do
-        umount "$mount_target" 2>/dev/null || true
-    done
-    rm -f "$ACTIVE_FILE"
-}
-
-apply_playlist() {
-    ensure_data
-    generate_qml
-    target="$(detect_target)" || {
-        echo "ERROR: no supported webOS screensaver target found" >&2
-        exit 1
-    }
-
-    disable_mounts
-    mount --bind "$RUNTIME_QML" "$target"
-    printf '%s\n' "$target" > "$ACTIVE_FILE"
-    echo "applied=$target"
-}
-
-create_boot_hook() {
-    mkdir -p "$INIT_DIR"
-    tmp="$INIT_HOOK.tmp.$$"
-    cat > "$tmp" <<EOF_HOOK
-#!/bin/sh
-APP_DIR='$APP_DIR'
-MANAGER="\$APP_DIR/assets/manager.sh"
-if [ ! -f "\$MANAGER" ]; then
-    rm -f "\$0"
-    exit 0
-fi
-exec sh "\$MANAGER" boot
-EOF_HOOK
-    chmod 755 "$tmp"
-    mv "$tmp" "$INIT_HOOK"
-}
-
-enable_playlist() {
-    apply_playlist
-    create_boot_hook
-    echo "autostart=enabled"
-}
-
-boot_playlist() {
-    apply_playlist
-}
-
-decode_url() {
-    encoded="$1"
-    command -v base64 >/dev/null 2>&1 || {
-        echo "ERROR: base64 command is unavailable on this TV" >&2
-        exit 1
-    }
-    printf '%s' "$encoded" | base64 -d 2>/dev/null || true
-}
-
-download_file() {
-    url="$1"
-    destination="$2"
-    if command -v wget >/dev/null 2>&1; then
-        wget -q -O "$destination" "$url"
-    elif command -v curl >/dev/null 2>&1; then
-        curl -L -f -s -S -o "$destination" "$url"
-    else
-        echo "ERROR: neither wget nor curl is available" >&2
-        return 1
-    fi
-}
-
-validate_gif_dimensions() {
-    file="$1"
-    byte_values="$(dd if="$file" bs=1 skip=6 count=4 2>/dev/null | od -An -tu1 2>/dev/null || true)"
-    set -- $byte_values
-    [ "$#" -eq 4 ] || {
-        echo "ERROR: could not read GIF dimensions" >&2
-        return 1
-    }
-
-    width=$(($1 + ($2 * 256)))
-    height=$(($3 + ($4 * 256)))
-    pixels=$((width * height))
-
-    if [ "$width" -le 0 ] || [ "$height" -le 0 ] || \
-       [ "$width" -gt "$MAX_DIMENSION" ] || [ "$height" -gt "$MAX_DIMENSION" ] || \
-       [ "$pixels" -gt "$MAX_PIXELS" ]; then
-        echo "ERROR: GIF dimensions ${width}x${height} exceed the safe TV limit" >&2
-        return 1
-    fi
-
-    printf '%sx%s' "$width" "$height"
-}
-
-add_url() {
-    ensure_data
-    [ "$(playlist_count)" -lt "$MAX_ITEMS" ] || {
-        echo "ERROR: playlist limit is $MAX_ITEMS GIFs" >&2
-        exit 1
-    }
-
-    encoded="${1:-}"
-    [ -n "$encoded" ] || { echo "ERROR: missing URL" >&2; exit 1; }
-    url="$(decode_url "$encoded")"
-    case "$url" in
-        http://*|https://*) ;;
-        *) echo "ERROR: only direct http/https GIF URLs are allowed" >&2; exit 1 ;;
-    esac
-
-    id="gif-$(date +%s)-$$.gif"
-    tmp="$ITEMS_DIR/$id.part"
-    dest="$ITEMS_DIR/$id"
-    rm -f "$tmp"
-
-    download_file "$url" "$tmp" || {
-        rm -f "$tmp"
-        echo "ERROR: download failed" >&2
-        exit 1
-    }
-
-    bytes="$(wc -c < "$tmp" | tr -d ' ')"
-    case "$bytes" in ''|*[!0-9]*) bytes=0 ;; esac
-    if [ "$bytes" -le 0 ] || [ "$bytes" -gt "$MAX_BYTES" ]; then
-        rm -f "$tmp"
-        echo "ERROR: GIF must be between 1 byte and 15 MiB" >&2
-        exit 1
-    fi
-
-    total_after=$(( $(playlist_total_bytes) + bytes ))
-    if [ "$total_after" -gt "$MAX_TOTAL_BYTES" ]; then
-        rm -f "$tmp"
-        echo "ERROR: playlist storage would exceed 96 MiB" >&2
-        exit 1
-    fi
-
-    signature="$(dd if="$tmp" bs=1 count=6 2>/dev/null || true)"
-    case "$signature" in
-        GIF87a|GIF89a) ;;
-        *) rm -f "$tmp"; echo "ERROR: downloaded file is not a GIF" >&2; exit 1 ;;
-    esac
-
-    dimensions="$(validate_gif_dimensions "$tmp")" || {
-        rm -f "$tmp"
-        exit 1
-    }
-
-    mv "$tmp" "$dest"
-    printf '%s\n' "$id" >> "$PLAYLIST_FILE"
-    generate_qml
-    echo "added=$id"
-    echo "dimensions=$dimensions"
-}
-
-remove_item() {
-    ensure_data
-    id="${1:-}"
-    valid_name "$id" || { echo "ERROR: invalid item id" >&2; exit 1; }
-    grep -Fx "$id" "$PLAYLIST_FILE" >/dev/null 2>&1 || {
-        echo "ERROR: playlist item was not found" >&2
-        exit 1
-    }
-
-    tmp="$PLAYLIST_FILE.tmp.$$"
-    grep -Fvx "$id" "$PLAYLIST_FILE" > "$tmp" || true
-    mv "$tmp" "$PLAYLIST_FILE"
-    rm -f "$ITEMS_DIR/$id"
-    generate_qml
-    echo "removed=$id"
-}
-
-move_item() {
-    ensure_data
-    id="${1:-}"
-    direction="${2:-}"
-    valid_name "$id" || { echo "ERROR: invalid item id" >&2; exit 1; }
-    case "$direction" in up|down) ;; *) echo "ERROR: direction must be up or down" >&2; exit 1 ;; esac
-    grep -Fx "$id" "$PLAYLIST_FILE" >/dev/null 2>&1 || {
-        echo "ERROR: playlist item was not found" >&2
-        exit 1
-    }
-
-    tmp="$PLAYLIST_FILE.tmp.$$"
-    awk -v wanted="$id" -v direction="$direction" '
-        { lines[NR] = $0; if ($0 == wanted) position = NR }
-        END {
-            count = NR
-            if (direction == "up" && position > 1) {
-                swap = lines[position - 1]; lines[position - 1] = lines[position]; lines[position] = swap
-            } else if (direction == "down" && position > 0 && position < count) {
-                swap = lines[position + 1]; lines[position + 1] = lines[position]; lines[position] = swap
-            }
-            for (i = 1; i <= count; i++) print lines[i]
-        }
-    ' "$PLAYLIST_FILE" > "$tmp"
-    mv "$tmp" "$PLAYLIST_FILE"
-    generate_qml
-    echo "moved=$id:$direction"
-}
-
-set_option() {
-    ensure_data
-    key="${1:-}"
-    value="${2:-}"
-    mode="$(read_setting mode ordered)"
-    duration="$(read_setting duration 30000)"
-    fit="$(read_setting fit crop)"
-
-    case "$key" in
-        mode)
-            case "$value" in ordered|shuffle) mode="$value" ;; *) echo "ERROR: invalid mode" >&2; exit 1 ;; esac
-            ;;
-        duration)
-            case "$value" in ''|*[!0-9]*) echo "ERROR: invalid duration" >&2; exit 1 ;; esac
-            [ "$value" -ge 10000 ] && [ "$value" -le 300000 ] || {
-                echo "ERROR: duration must be 10000-300000 ms" >&2
-                exit 1
-            }
-            duration="$value"
-            ;;
-        fit)
-            case "$value" in crop|fit|stretch) fit="$value" ;; *) echo "ERROR: invalid fit mode" >&2; exit 1 ;; esac
-            ;;
-        *) echo "ERROR: unknown setting" >&2; exit 1 ;;
-    esac
-
-    write_settings "$mode" "$duration" "$fit"
-    generate_qml
-    echo "updated=$key:$value"
-}
-
-list_items() {
-    ensure_data
-    while IFS= read -r id; do
-        valid_name "$id" || continue
-        [ -f "$ITEMS_DIR/$id" ] || continue
-        bytes="$(wc -c < "$ITEMS_DIR/$id" | tr -d ' ')"
-        printf '%s\t%s\n' "$id" "$bytes"
-    done < "$PLAYLIST_FILE"
-}
-
-show_status() {
-    ensure_data
-    target="$(detect_target 2>/dev/null || true)"
-    active_target="$(cat "$ACTIVE_FILE" 2>/dev/null || true)"
-    enabled=no
-    if [ -n "$active_target" ] && [ "$active_target" = "$target" ] && is_target_mounted "$target"; then
-        enabled=yes
-    fi
-
-    autostart=no
-    [ -x "$INIT_HOOK" ] && autostart=yes
-
-    printf 'enabled=%s\n' "$enabled"
-    printf 'autostart=%s\n' "$autostart"
-    printf 'target=%s\n' "$target"
-    printf 'count=%s\n' "$(playlist_count)"
-    printf 'bytes=%s\n' "$(playlist_total_bytes)"
-    printf 'mode=%s\n' "$(read_setting mode ordered)"
-    printf 'duration=%s\n' "$(read_setting duration 30000)"
-    printf 'fit=%s\n' "$(read_setting fit crop)"
-}
-
-preflight() {
-    missing=0
-    for command_name in mount umount dd od sed awk grep wc tr base64; do
-        if command -v "$command_name" >/dev/null 2>&1; then
-            printf '%s=ok\n' "$command_name"
-        else
-            printf '%s=missing\n' "$command_name"
-            missing=1
-        fi
-    done
-
-    if command -v wget >/dev/null 2>&1 || command -v curl >/dev/null 2>&1; then
-        printf 'downloader=ok\n'
-    else
-        printf 'downloader=missing\n'
-        missing=1
-    fi
-
-    target="$(detect_target 2>/dev/null || true)"
-    if [ -n "$target" ]; then
-        printf 'target=%s\n' "$target"
-    else
-        printf 'target=missing\n'
-        missing=1
-    fi
-
-    [ "$missing" -eq 0 ] || exit 1
-}
-
-disable_override() {
-    disable_mounts
-    rm -f "$INIT_HOOK"
-    echo "disabled"
-}
-
-uninstall_override() {
-    disable_override
-    echo "override removed; playlist data preserved"
-}
-
-reset_all() {
-    uninstall_override
-    rm -rf "$DATA_DIR"
-    echo "playlist data removed"
-}
+done
 
 command="${1:-status}"
+case "$command" in
+    init|add|import|remove|move|set|generate|apply|enable|boot|disable|uninstall|reset)
+        acquire_lock
+        cleanup_temporary_files
+        ;;
+esac
+
 case "$command" in
     init) ensure_data; generate_qml; show_status ;;
     preflight) preflight ;;
     status) show_status ;;
     list) list_items ;;
     add) add_url "${2:-}" ;;
+    import) import_file "${2:-}" ;;
+    import-dir) import_directory "${2:-}" ;;
     remove) remove_item "${2:-}" ;;
     move) move_item "${2:-}" "${3:-}" ;;
     set) set_option "${2:-}" "${3:-}" ;;

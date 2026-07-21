@@ -1,129 +1,205 @@
-# GIF Playlist for rooted LG webOS
+# Screensaver Playlist for rooted LG webOS
 
-A local screensaver playlist that downloads several GIFs and rotates through them sequentially or randomly.
+A local, rotating screensaver playlist for animated and still images. Media is downloaded or copied to the TV once and displayed sequentially or in shuffle mode.
 
-Primary validation target:
+> **Pre-release:** GIF playback is confirmed on an LG 43LM6300PSB running firmware 05.40.97 / webOS 4.10.2. Every other format and the complete recovery/reboot checklist must still pass on physical hardware before this branch is considered stable.
 
-- **TV:** LG 43LM6300PSB
-- **Firmware:** 05.40.97
-- **webOS generation:** 4.x / reported 4.10.2
-- **Expected target:** `/usr/palm/applications/com.webos.app.screensaver/qml/main.qml`
-- **Root environment:** webOS Homebrew Channel
+## Features
 
-The project remains pre-release until the package passes the complete physical checklist on that exact television.
+- Direct HTTP/HTTPS imports without relying on filename extensions.
+- Personal-file and whole-folder upload from Linux, macOS, or WSL over SSH.
+- `.txt` URL-list support with one direct media URL per line.
+- Automatic PC-side adaptation of oversized local media to fit inside 1920×1080 while preserving aspect ratio.
+- GIF, PNG/APNG containers, JPEG, and WebP signature detection.
+- Compatible files are uploaded byte-for-byte; adapted temporary copies never overwrite the originals.
+- Up to 24 items, 32 MiB per item, and 256 MiB total.
+- Maximum TV-side logical dimensions: 1920 pixels per axis and 2,073,600 pixels total.
+- Sequential or shuffled rotation at 10, 20, 30, 60, 120, or 300 seconds.
+- Crop, fit, or stretch scaling, with smooth or pixel filtering.
+- In-app update checks with manual installation and an optional automatic-update mode.
+- Temporary activation, explicit boot activation, safe disable, and complete reset.
+- Protection against replacing or unmounting a foreign screensaver override.
 
-## v0.1.1 scope
+The app uses Qt Quick `AnimatedImage`. GIF is confirmed on the target TV. PNG and JPEG still require physical validation. Static/animated WebP and APNG depend on decoder plugins included in a particular firmware; rejected items are skipped rather than leaving the playlist stuck.
 
-- Add direct `http://` or `https://` GIF URLs.
-- Verify GIF87a/GIF89a signature and logical dimensions.
-- Store up to 12 GIFs locally.
-- Per-file limit: 15 MiB.
-- Total playlist limit: 96 MiB.
-- Safe image limits: at most 1920 pixels on either axis and 2,073,600 logical pixels.
-- Reorder and remove entries.
-- Sequential or shuffled playback.
-- 10, 20, 30, 60, or 120 second switching.
-- Crop, fit, or stretch scaling.
-- Temporary application, persistent boot application, test, disable, and reset.
-- Chromium 53-compatible ES5-style JavaScript and conservative Flexbox CSS.
+## Compatibility target
 
-## Safety model
+| Component | Validated target |
+|---|---|
+| TV | LG 43LM6300PSB |
+| Firmware | 05.40.97 |
+| webOS | 4.x / reported 4.10.2 |
+| Root environment | webOS Homebrew Channel |
+| Screensaver entry point | `/usr/palm/applications/com.webos.app.screensaver/qml/main.qml` |
+| Browser baseline | Chromium 53 / ES5 |
+| Shell baseline | BusyBox-compatible POSIX `sh` |
 
-The package requires root because it bind-mounts a generated QML file over the LG screensaver entry point. It does **not** overwrite the original system QML file.
+## Install
 
-Runtime data:
+Build with the current unified LG CLI:
+
+```bash
+npm install -g @webos-tools/cli@3.2.5
+make check
+make package
+```
+
+Install `com.evelyn.webosgifplaylist_0.2.4_all.ipk` with webOS Dev Manager or `ares-install`, then open **Screensaver Playlist** and run **Compatibility check**.
+
+Package installation only initializes/migrates local data. It does **not** activate the override or create a boot hook. Activation is always explicit.
+
+A valid compatibility result must show every dependency as `ok`, including `stat`, `mountsFile=ok`, a downloader, and the expected `/qml/main.qml` target.
+
+### In-app and Homebrew Channel updates
+
+A version tag such as `v0.2.4` triggers the release workflow. The workflow verifies that the tag matches `appinfo.json`, runs the full test suite, builds and audits the IPK, generates `com.evelyn.webosgifplaylist.manifest.json` with the IPK SHA-256, and publishes both files to a GitHub Release.
+
+The app checks that official latest-release manifest when it opens. **Check now** performs the same request manually, and **Install update** delegates installation to the Homebrew Channel service. Before installation, the app rejects manifests with an unexpected package ID, source repository, version, package URL, or SHA-256. Homebrew Channel downloads the IPK, verifies that SHA-256 again, and installs it through the platform package service.
+
+**Automatic updates** are disabled by default. Enabling the option is a persistent user opt-in: when the app opens and finds a newer verified release, it starts the same Homebrew-managed installation automatically. Package installation may close the running app. Reopen it afterward; playlist data, settings, activation state, and the boot hook remain under `/var/lib/webosbrew/gif-playlist/` and `/var/lib/webosbrew/init.d/`.
+
+Once accepted into `webosbrew/apps-repo`, Homebrew Channel also detects newer versions through its normal store entry and exposes its own **Update** action. The prepared central-repository metadata is stored at `store/com.evelyn.webosgifplaylist.yml`.
+
+## Add media
+
+### Direct URL
+
+Paste a URL that returns the actual media bytes. Redirects are followed and the URL does not need a conventional extension. A normal webpage returning HTML is rejected.
+
+### Files or a complete PC folder
+
+The TV must accept non-interactive SSH as `root`. Pass the matching private key when it is not already available through your SSH configuration:
+
+```bash
+chmod +x tools/send-media.sh
+
+tools/send-media.sh \
+  --host 192.168.0.13 \
+  --identity "$HOME/.ssh/id_devman" \
+  "$HOME/Pictures/screensavers"
+```
+
+The directory is processed at its top level in filename order:
+
+- `.gif`, `.png`, `.apng`, `.jpg`, `.jpeg`, and `.webp` files are streamed and imported;
+- oversized local media is automatically adapted before upload;
+- `.txt` files are treated as URL lists, with one direct `http://` or `https://` media URL per line;
+- blank lines and lines beginning with `#` are ignored;
+- subdirectories and unsupported files are skipped and reported;
+- failed items do not prevent the remaining items from being attempted;
+- the final summary reports sources, successful imports, adapted items, failures, and skipped entries.
+
+The uploader fits oversized files inside 1920×1080 without stretching or upscaling. The original local file is unchanged. JPEG adaptations use quality 92, while GIF adaptations preserve animation by coalescing, resizing, and optimizing frames. Install ImageMagick on Debian, Ubuntu, or Linux Mint with:
+
+```bash
+sudo apt install imagemagick
+```
+
+Disable adaptation and upload original bytes with:
+
+```bash
+tools/send-media.sh \
+  --no-adapt \
+  --host 192.168.0.13 \
+  --identity "$HOME/.ssh/id_devman" \
+  oversized-image.png
+```
+
+Individual files and direct URLs remain supported:
+
+```bash
+tools/send-media.sh --host 192.168.0.13 ~/Pictures/loop.gif photo.png
+tools/send-media.sh --host 192.168.0.13 ~/Pictures/giphy.txt
+tools/send-media.sh --host 192.168.0.13 https://example.com/direct-image.gif
+```
+
+Optional persistent configuration:
+
+```bash
+export WEBOS_TV_HOST=192.168.0.13
+export WEBOS_TV_USER=root
+export WEBOS_TV_PORT=22
+export WEBOS_TV_IDENTITY="$HOME/.ssh/id_devman"
+
+tools/send-media.sh "$HOME/Pictures/screensavers"
+```
+
+The helper uses SSH batch mode, streams one local file at a time to a private temporary path, imports it, and removes the temporary copy after success or failure. It does not stage the complete folder on the TV.
+
+### TV-side folder alternative
+
+When PC-side SSH authentication is unavailable, upload the folder into `/tmp/screensavers` with webOS Dev Manager's file browser. Then run this once in its authenticated terminal:
+
+```sh
+APP=/media/developer/apps/usr/palm/applications/com.evelyn.webosgifplaylist
+sh "$APP/assets/manager.sh" import-dir /tmp/screensavers
+```
+
+TV-side folder import cannot resize media. Use the PC helper for automatic adaptation. The same supported extensions, URL-list rules, playlist limits, and per-item failure handling otherwise apply.
+
+## Controls
+
+- **Check now:** retrieve and validate the official latest-release manifest.
+- **Install update:** install a newer verified package through Homebrew Channel.
+- **Automatic updates:** opt in or out of installing newer verified releases when the app opens.
+- **Apply temporarily:** activate until reboot without creating a startup hook.
+- **Enable at boot:** activate now and create the Homebrew startup hook.
+- **Test screensaver:** apply temporarily and request the system screensaver immediately.
+- **Disable override:** unmount only this app's own override and remove its boot hook; media remains.
+- **Reset all data:** disable, remove the hook, and delete local media/settings.
+- **Filtering: Smooth:** preferred for photos and illustration.
+- **Filtering: Pixel:** nearest-neighbor-style scaling for pixel art.
+
+Runtime data intentionally remains at the historical v0.1.x path so upgrades migrate in place:
 
 ```text
 /var/lib/webosbrew/gif-playlist/
 ```
 
-Executable Homebrew startup hook:
+Startup hook:
 
 ```text
 /var/lib/webosbrew/init.d/55-gif-playlist
 ```
 
-Homebrew Channel starts user hooks with `run-parts`, so this app creates its own executable hook instead of relying on the package preserving shell-script executable bits.
+The app bind-mounts a generated QML file over the system entry point; it never overwrites LG's original QML. Generated QML is rewritten in place so active bind mounts retain their inode. Before applying, the manager verifies that any existing mount belongs to this app. Foreign screensaver mounts are refused and left untouched.
 
-Other screensaver packages and their startup hooks are left untouched. This app runs as hook `55`, after common `50-*` screensaver hooks, and reapplies its own bind mount last. Disabling or manually uninstalling this app does not strand another package's hook inside its data directory.
+## Physical release checklist
 
-Playlist updates rewrite the generated QML **in place**. This preserves the source inode used by an active file bind mount, so newly added GIFs and settings take effect without requiring a reboot.
+1. Run Compatibility check and confirm `/qml/main.qml`, `stat=ok`, and `mountsFile=ok`.
+2. Confirm an existing v0.1.x GIF playlist migrates and still plays.
+3. Add a direct GIF and a personally uploaded GIF.
+4. Import a mixed PC folder and URL list, verify automatic adaptation, and check the resulting playlist.
+5. Test a 1920×1080 JPEG and PNG with Smooth, Fit, and Crop.
+6. Test static WebP, animated WebP, and APNG; record full animation, first-frame-only behavior, or decoder failure.
+7. Add and remove media while the override is active.
+8. Confirm five ordered transitions at 10 seconds and verify shuffle avoids immediate repeats.
+9. Confirm GIFs restart after still images for at least two complete playlist cycles.
+10. Confirm malformed/unsupported files are rejected without changing valid imported items.
+11. Confirm applying while another screensaver override is mounted is refused.
+12. Disable and verify the stock LG screensaver returns.
+13. Apply temporarily, reboot with Quick Start+ disabled, and verify the override does not persist.
+14. Enable at boot, perform a full reboot, and verify persistence.
+15. Check for an update with automatic updates disabled; verify no installation starts without approval.
+16. Enable automatic updates against a test release and verify Homebrew Channel checks the hash, updates the package, preserves data, and reports the new installed version after reopening.
+17. Run for at least one hour while watching for stutter, black frames, restarts, memory pressure, and remote responsiveness.
+18. Reset all data and confirm the stock screensaver and empty data state.
 
-## Build
+## Recovery
 
-Install Node.js and `ares-cli`, then run:
-
-```bash
-npm install -g @webosose/ares-cli
-make package
-```
-
-Output:
-
-```text
-com.evelyn.webosgifplaylist_0.1.1_all.ipk
-```
-
-## Install and first check
-
-Install the `.ipk` with webOS Dev Manager or `ares-install`, launch **GIF Playlist**, and run **Compatibility check** before applying anything.
-
-Equivalent terminal command:
-
-```bash
-sh /media/developer/apps/usr/palm/applications/com.evelyn.webosgifplaylist/assets/manager.sh preflight
-```
-
-A valid result must show every required command as `ok`, a working downloader, and a target ending in `/qml/main.qml` on the LM6300.
-
-### Buttons
-
-- **Apply temporarily:** use the playlist now, but do not create a boot hook.
-- **Enable at boot:** apply now and create the executable Homebrew startup hook.
-- **Test screensaver:** apply temporarily first, then trigger the system screensaver.
-- **Disable override:** unmount the custom QML and remove this app's boot hook while preserving GIFs.
-- **Reset all data:** disable, remove the boot hook, and delete downloaded GIFs/settings.
-
-Before removing the application package through Homebrew Channel, use **Disable override** or **Reset all data**. If the package is removed first, its self-cleaning boot hook exits and deletes itself on the next reboot, but the current-session bind mount remains until reboot.
-
-## Physical checklist for LG 43LM6300PSB
-
-1. Run Compatibility check and confirm `/qml/main.qml`.
-2. Add one small GIF and use Test screensaver.
-3. Confirm that the custom GIF appears rather than LG's stock screensaver.
-4. Add a second GIF while the override is already active.
-5. Set 10 seconds and confirm five ordered transitions without rebooting or reapplying.
-6. Confirm shuffle does not immediately repeat the same item.
-7. Test Crop, Fit, and Stretch while the override remains mounted.
-8. Disable and verify the stock LG screensaver returns.
-9. Apply temporarily and verify no `55-gif-playlist` hook remains after reboot.
-10. Enable at boot, disable Quick Start+, and perform a complete reboot.
-11. Confirm the custom screensaver still works after reboot.
-12. Run it for at least one hour and watch for stutter, black frames, process restarts, or memory instability.
-13. Remove a GIF while active and confirm it disappears from the next screensaver launch.
-14. Reset all data and confirm the stock screensaver and empty local data state.
-
-## Recovery over SSH or Telnet
-
-Common sideload path:
-
-```text
-/media/developer/apps/usr/palm/applications/com.evelyn.webosgifplaylist
-```
-
-Preserve GIFs and restore stock:
+Preserve media and restore stock:
 
 ```bash
 sh /media/developer/apps/usr/palm/applications/com.evelyn.webosgifplaylist/assets/manager.sh disable
 ```
 
-Remove all playlist data:
+Remove all app data:
 
 ```bash
 sh /media/developer/apps/usr/palm/applications/com.evelyn.webosgifplaylist/assets/manager.sh reset
 ```
 
-Emergency recovery when the app path is unavailable:
+Emergency recovery when the package path is unavailable:
 
 ```bash
 umount /usr/palm/applications/com.webos.app.screensaver/qml/main.qml 2>/dev/null || true
@@ -133,27 +209,17 @@ rm -f /var/lib/webosbrew/gif-playlist/active-target
 reboot
 ```
 
-## Development checks
+## Development
 
 ```bash
-sh test/manager-test.sh
-make package
-make preflight
-make apply
-make enable
-make status
-make test
-make disable
-make reset
+make check            # shell, manager, batch, helper, update-policy, and UI-contract tests
+make package          # minimal IPK payload
+make audit-package    # inspect the built IPK
+make test-tv          # explicitly trigger the TV screensaver
 ```
 
-The integration test uses isolated temporary directories and fake mount commands to verify add, apply, in-place QML updates, executable `run-parts` boot hook creation, reorder, settings, disable, and reset.
+See [CONTRIBUTING.md](CONTRIBUTING.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), and [docs/TESTING.md](docs/TESTING.md) before changing the shell/QML boundary.
 
-## Origin and license
+## License and origin
 
-Based on ideas and MIT-licensed code from:
-
-- `Oted/idlegif`
-- `webosbrew/custom-screensaver`
-
-The original notices remain in `LICENSE`.
+MIT licensed. The project retains notices for the MIT-licensed work it originated from, including `Oted/idlegif` and `webosbrew/custom-screensaver`. See [LICENSE](LICENSE).

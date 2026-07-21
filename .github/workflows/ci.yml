@@ -4,66 +4,90 @@ on:
   push:
     branches:
       - main
-      - feature/**
+      - "feature/**"
   pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   validate-and-package:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out repository
+        uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - name: Install shell tooling
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck >/dev/null
+
+      - name: Run shell checks
+        id: shellcheck
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          make shellcheck 2>&1 | tee shellcheck.log
+
+      - name: Upload ShellCheck diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
         with:
-          node-version: '18'
+          name: shellcheck-diagnostics
+          path: shellcheck.log
+          if-no-files-found: error
+          retention-days: 14
 
-      - name: Validate shell syntax and portability
+      - name: Enforce ShellCheck result
+        if: steps.shellcheck.outcome == 'failure'
+        run: exit 1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          package-manager-cache: false
+
+      - name: Run integration and source checks
+        id: integration
+        continue-on-error: true
         run: |
-          sh -n assets/manager.sh
-          sh -n assets/install.sh
-          sh -n assets/uninstall.sh
-          sh -n test/manager-test.sh
-          ! grep -RE '\[\[|pipefail' assets/*.sh test/*.sh
+          set -o pipefail
+          make test check-js 2>&1 | tee integration.log
 
-      - name: Run manager integration tests
-        run: sh test/manager-test.sh
+      - name: Upload integration diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: integration-diagnostics
+          path: integration.log
+          if-no-files-found: error
+          retention-days: 14
 
-      - name: Validate Chromium 53 JavaScript and CSS baseline
-        run: |
-          node --check js/webos.js
-          node --check js/view.js
-          node --check js/app.js
-          ! grep -RE '=>|\.finally[[:space:]]*\(|\basync\b|\bawait\b|\bclass[[:space:]]' js/webos.js js/view.js js/app.js
-          ! grep -RE '(^|[;{[:space:]])gap[[:space:]]*:|display:[[:space:]]*grid|var\(--' css/app.css
+      - name: Enforce integration result
+        if: steps.integration.outcome == 'failure'
+        run: exit 1
 
-      - name: Install ares-cli
-        run: npm install -g @webosose/ares-cli
+      - name: Install LG webOS CLI
+        run: npm install --global @webos-tools/cli@3.2.5
 
       - name: Build IPK
         run: make package
 
-      - name: Inspect packaged contents
-        run: |
-          IPK=$(ls com.evelyn.webosgifplaylist_*_all.ipk)
-          mkdir -p package-audit
-          cd package-audit
-          ar x "../$IPK"
-          tar -xzf data.tar.gz
-          APP=usr/palm/applications/com.evelyn.webosgifplaylist
-          test -f "$APP/assets/manager.sh"
-          test -f "$APP/js/webos.js"
-          test -f "$APP/js/view.js"
-          test -f "$APP/js/app.js"
-          test ! -e "$APP/.github"
-          test ! -e "$APP/assets/screenshot.png"
-          test ! -e "$APP/js/giphy.js"
-          test ! -e "$APP/assets/Clock.qml"
-          test ! -e "$APP/assets/screensaver.qml"
+      - name: Audit packaged contents
+        run: make audit-package
+
+      - name: Record package checksum
+        run: sha256sum com.evelyn.webosgifplaylist_*_all.ipk
 
       - name: Upload test package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: webos-gif-playlist-ipk
           path: com.evelyn.webosgifplaylist_*_all.ipk
           if-no-files-found: error
+          retention-days: 90

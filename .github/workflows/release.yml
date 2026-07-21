@@ -3,71 +3,131 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
+    branches:
+      - "release/v*"
+
+permissions:
+  contents: write
 
 jobs:
-  build:
+  release:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
+    timeout-minutes: 20
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out release source
+        uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - name: Install shell tooling
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck >/dev/null
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
         with:
-          node-version: '18'
+          node-version: "24"
+          package-manager-cache: false
 
-      - name: Validate sources
+      - name: Verify release and application versions
+        id: version
+        shell: bash
         run: |
-          sh -n assets/manager.sh
-          sh -n assets/install.sh
-          sh -n assets/uninstall.sh
-          sh -n test/manager-test.sh
-          sh test/manager-test.sh
-          node --check js/webos.js
-          node --check js/view.js
-          node --check js/app.js
-          ! grep -RE '=>|\.finally[[:space:]]*\(|\basync\b|\bawait\b|\bclass[[:space:]]' js/webos.js js/view.js js/app.js
-          ! grep -RE '(^|[;{[:space:]])gap[[:space:]]*:|display:[[:space:]]*grid|var\(--' css/app.css
+          set -euo pipefail
+          APP_VERSION="$(node -p "require('./appinfo.json').version")"
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            RELEASE_TAG="$GITHUB_REF_NAME"
+          else
+            RELEASE_TAG="${GITHUB_REF_NAME#release/}"
+          fi
+          TAG_VERSION="${RELEASE_TAG#v}"
+          if [[ "$RELEASE_TAG" != v* ]] || [[ "$APP_VERSION" != "$TAG_VERSION" ]]; then
+            echo "Release ref $GITHUB_REF_NAME does not match appinfo.json version $APP_VERSION" >&2
+            exit 1
+          fi
+          echo "version=$APP_VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
 
-      - name: Install ares-cli
-        run: npm install -g @webosose/ares-cli
+      - name: Run validation suite
+        run: make check
 
-      - name: Build IPK
-        run: make package
+      - name: Install LG webOS CLI
+        run: npm install --global @webos-tools/cli@3.2.5
 
-      - name: Get package metadata
-        id: metadata
+      - name: Build and audit IPK
         run: |
-          echo "version=$(node -p "require('./appinfo.json').version")" >> "$GITHUB_OUTPUT"
-          echo "app_id=$(node -p "require('./appinfo.json').id")" >> "$GITHUB_OUTPUT"
+          make package
+          make audit-package
 
-      - name: Generate Homebrew manifest
+      - name: Generate Homebrew Channel manifest
+        id: manifest
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
         run: |
-          APP_ID="${{ steps.metadata.outputs.app_id }}"
-          VERSION="${{ steps.metadata.outputs.version }}"
+          set -euo pipefail
+          APP_ID="com.evelyn.webosgifplaylist"
           IPK="${APP_ID}_${VERSION}_all.ipk"
-          SHA256=$(sha256sum "$IPK" | cut -d' ' -f1)
-          cat > "${APP_ID}.manifest.json" <<MANIFEST
-          {
-            "id": "${APP_ID}",
-            "version": "${VERSION}",
-            "type": "web",
-            "title": "GIF Playlist",
-            "appDescription": "Rotating local GIF screensaver playlist for rooted LG webOS TVs",
-            "iconUri": "https://raw.githubusercontent.com/EvelynLimaB/webos-gif-playlist/main/assets/idlegif130.png",
-            "sourceUrl": "https://github.com/EvelynLimaB/webos-gif-playlist",
-            "ipkUrl": "https://github.com/EvelynLimaB/webos-gif-playlist/releases/download/${{ github.ref_name }}/${IPK}",
-            "rootRequired": true,
-            "ipkHash": { "sha256": "${SHA256}" }
-          }
-          MANIFEST
+          MANIFEST="${APP_ID}.manifest.json"
+          SHA256="$(sha256sum "$IPK" | awk '{print $1}')"
+          IPK_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}/${IPK}"
 
-      - name: Create release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            com.evelyn.webosgifplaylist_${{ steps.metadata.outputs.version }}_all.ipk
-            com.evelyn.webosgifplaylist.manifest.json
-          generate_release_notes: true
+          node - "$VERSION" "$IPK_URL" "$SHA256" "$MANIFEST" <<'NODE'
+          const fs = require('fs');
+          const [version, ipkUrl, sha256, manifestPath] = process.argv.slice(2);
+          const manifest = {
+            id: 'com.evelyn.webosgifplaylist',
+            version,
+            type: 'web',
+            title: 'Screensaver Playlist',
+            appDescription: 'A rotating playlist of animated and still images for rooted LG webOS TVs.',
+            iconUri: 'https://raw.githubusercontent.com/EvelynLimaB/webos-gif-playlist/main/assets/idlegif300.png',
+            sourceUrl: 'https://github.com/EvelynLimaB/webos-gif-playlist',
+            rootRequired: true,
+            ipkUrl,
+            ipkHash: { sha256 }
+          };
+          fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
+          NODE
+
+          node -e "JSON.parse(require('fs').readFileSync('$MANIFEST', 'utf8'))"
+          echo "ipk=$IPK" >> "$GITHUB_OUTPUT"
+          echo "manifest=$MANIFEST" >> "$GITHUB_OUTPUT"
+          echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IPK: ${{ steps.manifest.outputs.ipk }}
+          MANIFEST: ${{ steps.manifest.outputs.manifest }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(
+            "$RELEASE_TAG"
+            "$IPK"
+            "$MANIFEST"
+            --title "Screensaver Playlist $RELEASE_TAG"
+            --generate-notes
+          )
+          if [[ "$GITHUB_REF_TYPE" != "tag" ]]; then
+            args+=(--target "$GITHUB_SHA")
+          fi
+          gh release create "${args[@]}"
+
+      - name: Write release summary
+        env:
+          SHA256: ${{ steps.manifest.outputs.sha256 }}
+          IPK: ${{ steps.manifest.outputs.ipk }}
+          MANIFEST: ${{ steps.manifest.outputs.manifest }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          {
+            echo "## Release assets"
+            echo
+            echo "- Release: \`$RELEASE_TAG\`"
+            echo "- IPK: \`$IPK\`"
+            echo "- Manifest: \`$MANIFEST\`"
+            echo "- SHA-256: \`$SHA256\`"
+          } >> "$GITHUB_STEP_SUMMARY"
