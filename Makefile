@@ -2,36 +2,24 @@ APP_ID   = com.evelyn.webosgifplaylist
 VERSION  = $(shell node -p "require('./appinfo.json').version")
 IPK      = $(APP_ID)_$(VERSION)_all.ipk
 DEVICE   = tv
+DIST     = dist
 
-.PHONY: all package install apply enable launch update clean test status preflight disable reset inspect
+.PHONY: all stage package install apply enable launch update clean test status preflight disable reset inspect
 
 all: package
 
-package:
+stage:
+	@rm -rf $(DIST)
+	@mkdir -p $(DIST)/assets $(DIST)/css $(DIST)/js
+	@cp appinfo.json index.html LICENSE $(DIST)/
+	@cp css/app.css $(DIST)/css/
+	@cp js/webos.js js/view.js js/app.js $(DIST)/js/
+	@cp assets/idlegif80.png assets/idlegif130.png assets/idlegif300.png $(DIST)/assets/
+	@cp assets/manager.sh assets/install.sh assets/uninstall.sh $(DIST)/assets/
+
+package: stage
 	@echo "Packaging $(APP_ID) v$(VERSION)..."
-	@ares-package . \
-		-e ".git" \
-		-e ".github" \
-		-e ".gitignore" \
-		-e ".env" \
-		-e "*.ipk" \
-		-e "Makefile" \
-		-e "README.md" \
-		-e "AGENTS.md" \
-		-e "store-description.md" \
-		-e "*.manifest.json" \
-		-e "test" \
-		-e "assets/screenshot.png" \
-		-e "assets/Clock.qml" \
-		-e "assets/screensaver.qml" \
-		-e "js/giphy.js" \
-		-e "idlegif.png" \
-		-e "default.gif" \
-		-e "default1.gif" \
-		-e "default2.gif" \
-		-e "default3.gif" \
-		-e "default4.gif" \
-		-e "default_download.gif"
+	@ares-package $(DIST)/
 	@echo "Built: $(IPK)"
 
 install: package
@@ -67,6 +55,7 @@ test:
 	@ares-shell -d $(DEVICE) -r "luna-send -n 1 luna://com.webos.service.tvpower/power/turnOnScreenSaver '{}'"
 
 clean:
+	@rm -rf $(DIST)
 	@rm -f *.ipk *.manifest.json
 
 inspect:
