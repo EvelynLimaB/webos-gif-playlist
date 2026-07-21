@@ -6,6 +6,13 @@ All notable changes are documented here. The project is pre-release and follows 
 
 - Physical validation of in-app updates, PC-folder imports, PNG, JPEG, WebP, APNG, reboot persistence, and long-running stability.
 
+## [0.2.5] - 2026-07-21
+
+- Treat GitHub's expected `404` response as an empty release channel rather than an update failure.
+- Explain that development builds begin checking normally after the first public GitHub Release exists.
+- Keep genuine network, server, malformed-manifest, and installation failures visible as errors.
+- Add regression coverage so only release-channel `404` responses receive the non-error state.
+
 ## [0.2.4] - 2026-07-21
 
 - Check the official latest-release manifest whenever the application opens.
@@ -43,7 +50,7 @@ All notable changes are documented here. The project is pre-release and follows 
 - Refuse to replace an existing screensaver mount owned by another package.
 - Unmount only a bind mount identified as belonging to Screensaver Playlist.
 - Serialize mutating operations with a stale-lock recovery mechanism.
-- Make imports, removals, reordering, and setting changes transactional around QML regeneration.
+- Make imports, removals, reordering, settings, and QML updates transactional around QML generation.
 - Stop delayed decoder-error advancement after a later image becomes ready.
 - Make package installation initialize data without activating the override.
 
