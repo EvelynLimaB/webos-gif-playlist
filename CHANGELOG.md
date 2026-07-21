@@ -6,6 +6,14 @@ All notable changes are documented here. The project is pre-release and follows 
 
 - Physical validation of in-app updates, PC-folder imports, PNG, JPEG, WebP, APNG, reboot persistence, and long-running stability.
 
+## [0.2.7] - 2026-07-21
+
+- Replace the remaining native `window.confirm()` reset dialog with a visible two-press confirmation designed for webOS 4 remotes.
+- Require the second reset press within 15 seconds and clearly report cancellation when the confirmation expires.
+- Cancel an armed reset when another app operation begins so a stale destructive confirmation cannot remain active.
+- Add UI-contract and package regression checks for the TV-safe reset flow.
+- Publish a real `0.2.6` to `0.2.7` update target for automatic-update validation.
+
 ## [0.2.6] - 2026-07-21
 
 - Replace unreliable native `window.confirm()` dialogs in the updater with visible two-press confirmations designed for TV remotes.
