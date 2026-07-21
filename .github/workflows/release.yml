@@ -4,6 +4,8 @@ on:
   push:
     tags:
       - "v*"
+    branches:
+      - "release/v*"
 
 permissions:
   contents: write
@@ -14,7 +16,7 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      - name: Check out tagged source
+      - name: Check out release source
         uses: actions/checkout@v6
 
       - name: Install shell tooling
@@ -26,18 +28,24 @@ jobs:
           node-version: "24"
           package-manager-cache: false
 
-      - name: Verify tag and application versions
+      - name: Verify release and application versions
         id: version
         shell: bash
         run: |
           set -euo pipefail
           APP_VERSION="$(node -p "require('./appinfo.json').version")"
-          TAG_VERSION="${GITHUB_REF_NAME#v}"
-          if [[ "$APP_VERSION" != "$TAG_VERSION" ]]; then
-            echo "Tag $GITHUB_REF_NAME does not match appinfo.json version $APP_VERSION" >&2
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            RELEASE_TAG="$GITHUB_REF_NAME"
+          else
+            RELEASE_TAG="${GITHUB_REF_NAME#release/}"
+          fi
+          TAG_VERSION="${RELEASE_TAG#v}"
+          if [[ "$RELEASE_TAG" != v* ]] || [[ "$APP_VERSION" != "$TAG_VERSION" ]]; then
+            echo "Release ref $GITHUB_REF_NAME does not match appinfo.json version $APP_VERSION" >&2
             exit 1
           fi
           echo "version=$APP_VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Run validation suite
         run: make check
@@ -55,13 +63,14 @@ jobs:
         shell: bash
         env:
           VERSION: ${{ steps.version.outputs.version }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
         run: |
           set -euo pipefail
           APP_ID="com.evelyn.webosgifplaylist"
           IPK="${APP_ID}_${VERSION}_all.ipk"
           MANIFEST="${APP_ID}.manifest.json"
           SHA256="$(sha256sum "$IPK" | awk '{print $1}')"
-          IPK_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/${IPK}"
+          IPK_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}/${IPK}"
 
           node - "$VERSION" "$IPK_URL" "$SHA256" "$MANIFEST" <<'NODE'
           const fs = require('fs');
@@ -91,24 +100,33 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           IPK: ${{ steps.manifest.outputs.ipk }}
           MANIFEST: ${{ steps.manifest.outputs.manifest }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
         shell: bash
         run: |
           set -euo pipefail
-          gh release create "$GITHUB_REF_NAME" \
-            "$IPK" \
-            "$MANIFEST" \
-            --title "Screensaver Playlist $GITHUB_REF_NAME" \
+          args=(
+            "$RELEASE_TAG"
+            "$IPK"
+            "$MANIFEST"
+            --title "Screensaver Playlist $RELEASE_TAG"
             --generate-notes
+          )
+          if [[ "$GITHUB_REF_TYPE" != "tag" ]]; then
+            args+=(--target "$GITHUB_SHA")
+          fi
+          gh release create "${args[@]}"
 
       - name: Write release summary
         env:
           SHA256: ${{ steps.manifest.outputs.sha256 }}
           IPK: ${{ steps.manifest.outputs.ipk }}
           MANIFEST: ${{ steps.manifest.outputs.manifest }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
         run: |
           {
             echo "## Release assets"
             echo
+            echo "- Release: \`$RELEASE_TAG\`"
             echo "- IPK: \`$IPK\`"
             echo "- Manifest: \`$MANIFEST\`"
             echo "- SHA-256: \`$SHA256\`"
