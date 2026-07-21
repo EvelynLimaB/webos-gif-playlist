@@ -7,8 +7,8 @@ A local, rotating screensaver playlist for animated and still images. Media is d
 ## Features
 
 - Direct HTTP/HTTPS imports without relying on filename extensions.
-- Personal-file upload from Linux, macOS, or WSL over SSH.
-- Whole-folder batch import, including `.txt` files containing one direct URL per line.
+- Personal-file and whole-folder upload from Linux, macOS, or WSL over SSH.
+- `.txt` URL-list support with one direct media URL per line.
 - GIF, PNG/APNG containers, JPEG, and WebP signature detection.
 - Source bytes are never resized, converted, recompressed, or re-encoded.
 - Up to 24 items, 32 MiB per item, and 256 MiB total.
@@ -54,18 +54,37 @@ A valid compatibility result must show every dependency as `ok`, including `stat
 
 Paste a URL that returns the actual media bytes. Redirects are followed and the URL does not need a conventional extension. A normal webpage returning HTML is rejected.
 
-### Personal files from a PC
+### Files or a complete PC folder
 
-The TV must accept SSH as `root`:
+The TV must accept non-interactive SSH as `root`. Pass the matching private key when it is not already available through your SSH configuration:
 
 ```bash
 chmod +x tools/send-media.sh
 
-tools/send-media.sh --host 192.168.0.13 ~/Pictures/loop.gif
-tools/send-media.sh --host 192.168.0.13 photo.png animation.webp
+tools/send-media.sh \
+  --host 192.168.0.13 \
+  --identity "$HOME/.ssh/webos_tv" \
+  "$HOME/Pictures/screensavers"
 ```
 
-Optional SSH configuration:
+The directory is processed at its top level in filename order:
+
+- `.gif`, `.png`, `.apng`, `.jpg`, `.jpeg`, and `.webp` files are streamed and imported;
+- `.txt` files are treated as URL lists, with one direct `http://` or `https://` media URL per line;
+- blank lines and lines beginning with `#` are ignored;
+- subdirectories and unsupported files are skipped and reported;
+- failed items do not prevent the remaining items from being attempted;
+- the final summary reports sources, successful imports, failures, and skipped entries.
+
+Individual files and direct URLs remain supported:
+
+```bash
+tools/send-media.sh --host 192.168.0.13 ~/Pictures/loop.gif photo.png
+tools/send-media.sh --host 192.168.0.13 ~/Pictures/giphy.txt
+tools/send-media.sh --host 192.168.0.13 https://example.com/direct-image.gif
+```
+
+Optional persistent configuration:
 
 ```bash
 export WEBOS_TV_HOST=192.168.0.13
@@ -73,48 +92,21 @@ export WEBOS_TV_USER=root
 export WEBOS_TV_PORT=22
 export WEBOS_TV_IDENTITY="$HOME/.ssh/webos_tv"
 
-tools/send-media.sh ~/Pictures/loop.gif
+tools/send-media.sh "$HOME/Pictures/screensavers"
 ```
 
-The helper streams each local file over SSH to a private temporary path, imports it, and removes the temporary copy even when import fails.
+The helper uses SSH batch mode, streams one local file at a time to a private temporary path, imports it, and removes the temporary copy after success or failure. It does not stage the complete folder on the TV.
 
-Manual equivalent:
+### TV-side folder alternative
 
-```bash
-cat ~/Pictures/loop.gif | ssh root@192.168.0.13 \
-  "umask 077; cat > /tmp/screensaver-upload.bin"
-
-ssh root@192.168.0.13 \
-  "sh /media/developer/apps/usr/palm/applications/com.evelyn.webosgifplaylist/assets/manager.sh import /tmp/screensaver-upload.bin; rm -f /tmp/screensaver-upload.bin"
-```
-
-### Import an entire folder
-
-Upload all files from one PC folder into a single TV directory, for example `/tmp/screensavers`, using webOS Dev Manager's file browser. Then run this once in its authenticated terminal:
+When PC-side SSH authentication is unavailable, upload the folder into `/tmp/screensavers` with webOS Dev Manager's file browser. Then run this once in its authenticated terminal:
 
 ```sh
 APP=/media/developer/apps/usr/palm/applications/com.evelyn.webosgifplaylist
 sh "$APP/assets/manager.sh" import-dir /tmp/screensavers
 ```
 
-The batch command processes the top level of the directory in filename order:
-
-- `.gif`, `.png`, `.apng`, `.jpg`, `.jpeg`, and `.webp` files are imported as local media;
-- `.txt` files are treated as URL lists, with one direct `http://` or `https://` media URL per line;
-- blank lines and lines beginning with `#` are ignored;
-- unsupported files are skipped and reported;
-- each failed item is reported while the remaining items continue;
-- the final `batch_*` summary reports files, URLs, successful imports, failures, and skipped entries.
-
-Example URL list:
-
-```text
-# Favorites
-https://media.giphy.com/media/example-one/giphy.gif
-https://media.giphy.com/media/example-two/giphy.gif
-```
-
-The normal playlist limits still apply. Check `status` first when importing a large folder so the total does not exceed 24 items or 256 MiB.
+The same supported extensions, URL-list rules, playlist limits, and per-item failure handling apply. Check `status` first when importing a large folder so the total does not exceed 24 items or 256 MiB.
 
 ## Controls
 
@@ -145,7 +137,7 @@ The app bind-mounts a generated QML file over the system entry point; it never o
 1. Run Compatibility check and confirm `/qml/main.qml`, `stat=ok`, and `mountsFile=ok`.
 2. Confirm an existing v0.1.x GIF playlist migrates and still plays.
 3. Add a direct GIF and a personally uploaded GIF.
-4. Import a mixed folder and URL list, then verify its batch summary and resulting playlist.
+4. Import a mixed PC folder and URL list, then verify its summary and resulting playlist.
 5. Test a 1920×1080 JPEG and PNG with Smooth, Fit, and Crop.
 6. Test static WebP, animated WebP, and APNG; record full animation, first-frame-only behavior, or decoder failure.
 7. Add and remove media while the override is active.
