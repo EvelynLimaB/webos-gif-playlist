@@ -194,7 +194,7 @@ image_dimensions() {
 }
 
 run_image_convert() {
-    if [ "$IMAGE_TOOL" = magick ]; then
+    if command -v magick >/dev/null 2>&1; then
         magick "$@"
     else
         convert "$@"
