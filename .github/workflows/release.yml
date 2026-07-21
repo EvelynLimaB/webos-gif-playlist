@@ -18,14 +18,21 @@ jobs:
         with:
           node-version: '18'
 
-      - name: Install ares-cli
-        run: npm install -g @webosose/ares-cli
-
-      - name: Validate shell scripts
+      - name: Validate sources
         run: |
           sh -n assets/manager.sh
           sh -n assets/install.sh
           sh -n assets/uninstall.sh
+          sh -n test/manager-test.sh
+          sh test/manager-test.sh
+          node --check js/webos.js
+          node --check js/view.js
+          node --check js/app.js
+          ! grep -RE '=>|\.finally[[:space:]]*\(|\basync\b|\bawait\b|\bclass[[:space:]]' js/webos.js js/view.js js/app.js
+          ! grep -RE '(^|[;{[:space:]])gap[[:space:]]*:|display:[[:space:]]*grid|var\(--' css/app.css
+
+      - name: Install ares-cli
+        run: npm install -g @webosose/ares-cli
 
       - name: Build IPK
         run: make package
@@ -42,7 +49,7 @@ jobs:
           VERSION="${{ steps.metadata.outputs.version }}"
           IPK="${APP_ID}_${VERSION}_all.ipk"
           SHA256=$(sha256sum "$IPK" | cut -d' ' -f1)
-          cat > "${APP_ID}.manifest.json" <<EOF
+          cat > "${APP_ID}.manifest.json" <<MANIFEST
           {
             "id": "${APP_ID}",
             "version": "${VERSION}",
@@ -55,7 +62,7 @@ jobs:
             "rootRequired": true,
             "ipkHash": { "sha256": "${SHA256}" }
           }
-          EOF
+          MANIFEST
 
       - name: Create release
         uses: softprops/action-gh-release@v2
