@@ -51,8 +51,8 @@ if [ "$1" = identify ]; then
         last="$argument"
     done
     case "$last" in
-        *03-oversized.jpg\[0\]) printf '3840 2160\n' ;;
         *webos-media-adapt*\[0\]) printf '1920 1080\n' ;;
+        *03-oversized.jpg\[0\]) printf '3840 2160\n' ;;
         *) printf '100 100\n' ;;
     esac
     exit 0
