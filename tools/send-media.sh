@@ -179,22 +179,24 @@ send_file() {
 
 process_url_list() {
     list_file="$1"
+    list_name="$(basename "$list_file")"
     line_number=0
-    while IFS= read -r raw_line || [ -n "$raw_line" ]; do
+
+    while IFS= read -r raw_line <&3 || [ -n "$raw_line" ]; do
         line_number=$((line_number + 1))
         url="$(printf '%s' "$raw_line" | tr -d '\r' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
         case "$url" in
             ''|'#'*) continue ;;
             http://*|https://*)
                 SOURCE_COUNT=$((SOURCE_COUNT + 1))
-                send_url "$url" "$(basename "$list_file"):$line_number" || true
+                send_url "$url" "$list_name:$line_number" || true
                 ;;
             *)
-                echo "ERROR: invalid URL in $(basename "$list_file"):$line_number" >&2
+                echo "ERROR: invalid URL in $list_name:$line_number" >&2
                 FAILED_COUNT=$((FAILED_COUNT + 1))
                 ;;
         esac
-    done < "$list_file"
+    done 3< "$list_file"
 }
 
 process_directory() {
