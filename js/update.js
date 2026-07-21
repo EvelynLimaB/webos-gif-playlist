@@ -110,14 +110,16 @@ var UpdatePolicy = (function() {
     }
 
     function setStoredBoolean(storage, key, enabled) {
+        var expected = enabled ? "yes" : "no";
         try {
-            if (storage) {
-                storage.setItem(key, enabled ? "yes" : "no");
+            if (!storage) {
+                return false;
             }
+            storage.setItem(key, expected);
+            return storage.getItem(key) === expected;
         } catch (ignored) {
             return false;
         }
-        return true;
     }
 
     function getStoredText(storage, key) {
@@ -130,17 +132,18 @@ var UpdatePolicy = (function() {
 
     function setStoredText(storage, key, value) {
         try {
-            if (storage) {
-                if (value) {
-                    storage.setItem(key, value);
-                } else {
-                    storage.removeItem(key);
-                }
+            if (!storage) {
+                return false;
             }
+            if (value) {
+                storage.setItem(key, value);
+                return storage.getItem(key) === value;
+            }
+            storage.removeItem(key);
+            return !storage.getItem(key);
         } catch (ignored) {
             return false;
         }
-        return true;
     }
 
     return {
@@ -170,7 +173,12 @@ var UpdatePolicy = (function() {
 
 function UpdateController(webosService) {
     this.webos = webosService;
-    this.storage = window.localStorage;
+    this.storage = null;
+    try {
+        this.storage = window.localStorage;
+    } catch (ignored) {
+        this.storage = null;
+    }
     this.state = {
         installedVersion: "unknown",
         latestVersion: "unknown",
@@ -179,8 +187,12 @@ function UpdateController(webosService) {
         checking: false,
         installing: false,
         manifest: null,
+        autoConfirmArmed: false,
+        installConfirmArmed: false,
         detail: "Checks the project's official GitHub Release manifest. Automatic installation is off by default."
     };
+    this.autoConfirmTimer = null;
+    this.installConfirmTimer = null;
     this._bind();
     this.render();
 }
@@ -214,6 +226,52 @@ UpdateController.prototype._setGlobalStatus = function(message, type) {
     status.className = type || "";
 };
 
+UpdateController.prototype._clearAutoConfirmation = function() {
+    if (this.autoConfirmTimer) {
+        clearTimeout(this.autoConfirmTimer);
+        this.autoConfirmTimer = null;
+    }
+    this.state.autoConfirmArmed = false;
+};
+
+UpdateController.prototype._clearInstallConfirmation = function() {
+    if (this.installConfirmTimer) {
+        clearTimeout(this.installConfirmTimer);
+        this.installConfirmTimer = null;
+    }
+    this.state.installConfirmArmed = false;
+};
+
+UpdateController.prototype._armAutoConfirmation = function() {
+    var self = this;
+    this._clearAutoConfirmation();
+    this.state.autoConfirmArmed = true;
+    this.state.detail = "Press Automatic updates again within 15 seconds to enable verified release installation.";
+    this.render();
+    this.autoConfirmTimer = setTimeout(function() {
+        self.state.autoConfirmArmed = false;
+        self.autoConfirmTimer = null;
+        self.state.detail = "Automatic installation remains off.";
+        self.render();
+    }, 15000);
+};
+
+UpdateController.prototype._armInstallConfirmation = function() {
+    var self = this;
+    this._clearInstallConfirmation();
+    this.state.installConfirmArmed = true;
+    this.state.detail = "Press Install again within 15 seconds to confirm package replacement.";
+    this.render();
+    this.installConfirmTimer = setTimeout(function() {
+        self.state.installConfirmArmed = false;
+        self.installConfirmTimer = null;
+        if (self.state.available) {
+            self.state.detail = "Update " + self.state.latestVersion + " is available. Installation was not started.";
+        }
+        self.render();
+    }, 15000);
+};
+
 UpdateController.prototype.render = function() {
     var installed = this.state.installedVersion || "unknown";
     var latest = this.state.latestVersion || "unknown";
@@ -231,21 +289,45 @@ UpdateController.prototype.render = function() {
     checkButton.textContent = this.state.checking ? "Checking…" : "Check now";
     checkButton.disabled = this.state.checking || this.state.installing;
 
-    installButton.textContent = this.state.installing ? "Installing…" : (this.state.available ? "Install " + latest : "Install update");
+    if (this.state.installing) {
+        installButton.textContent = "Installing…";
+    } else if (this.state.installConfirmArmed) {
+        installButton.textContent = "Press again to install " + latest;
+    } else {
+        installButton.textContent = this.state.available ? "Install " + latest : "Install update";
+    }
     installButton.disabled = !this.state.available || this.state.checking || this.state.installing;
 
-    autoButton.textContent = "Automatic updates: " + (this.state.automatic ? "On" : "Off");
-    autoButton.className = this.state.automatic ? "success" : "";
+    if (this.state.automatic) {
+        autoButton.textContent = "Automatic updates: On";
+        autoButton.className = "success";
+    } else if (this.state.autoConfirmArmed) {
+        autoButton.textContent = "Press again to enable";
+        autoButton.className = "primary";
+    } else {
+        autoButton.textContent = "Automatic updates: Off";
+        autoButton.className = "";
+    }
     autoButton.disabled = this.state.installing;
 };
 
 UpdateController.prototype.toggleAutomatic = function() {
     var next = !this.state.automatic;
-    if (next && window.confirm && !window.confirm("Automatically install future updates from this project's verified GitHub Releases?")) {
+
+    if (next && !this.state.autoConfirmArmed) {
+        this._armAutoConfirmation();
         return;
     }
 
-    UpdatePolicy.setAutomaticUpdates(this.storage, next);
+    this._clearAutoConfirmation();
+    if (!UpdatePolicy.setAutomaticUpdates(this.storage, next) ||
+            UpdatePolicy.automaticUpdatesEnabled(this.storage) !== next) {
+        this.state.detail = "Automatic updates could not be saved on this TV.";
+        this._setGlobalStatus(this.state.detail, "err");
+        this.render();
+        return;
+    }
+
     this.state.automatic = next;
     this.state.detail = next ?
         "Automatic updates are enabled. New verified releases install when this app opens." :
@@ -265,6 +347,7 @@ UpdateController.prototype.check = function(showErrors, allowAutomaticInstall) {
         return Promise.resolve(null);
     }
 
+    this._clearInstallConfirmation();
     this.state.checking = true;
     this.state.detail = "Checking the official release manifest…";
     this.render();
@@ -308,6 +391,7 @@ UpdateController.prototype.check = function(showErrors, allowAutomaticInstall) {
         self.state.checking = false;
         self.state.available = false;
         self.state.manifest = null;
+        self._clearInstallConfirmation();
 
         if (UpdatePolicy.isMissingReleaseError(error)) {
             self.state.latestVersion = "unpublished";
@@ -337,15 +421,21 @@ UpdateController.prototype.install = function(automatic) {
         return Promise.resolve(null);
     }
 
-    if (!automatic && window.confirm && !window.confirm(
-        "Install Screensaver Playlist " + manifest.version + " now? The app may close while Homebrew Channel replaces the package."
-    )) {
+    if (!automatic && !this.state.installConfirmArmed) {
+        this._armInstallConfirmation();
         return Promise.resolve(null);
     }
 
+    this._clearInstallConfirmation();
     this.state.installing = true;
     this.state.detail = "Preparing update " + manifest.version + "…";
-    UpdatePolicy.setPendingVersion(this.storage, manifest.version);
+    if (!UpdatePolicy.setPendingVersion(this.storage, manifest.version)) {
+        this.state.installing = false;
+        this.state.detail = "Update could not start because its pending state could not be saved.";
+        this.render();
+        this._setGlobalStatus(this.state.detail, "err");
+        return Promise.resolve(false);
+    }
     this.render();
     this._setGlobalStatus(this.state.detail);
 
