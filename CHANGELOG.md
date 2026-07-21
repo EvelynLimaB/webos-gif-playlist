@@ -7,6 +7,9 @@ All notable changes are documented here. The project is pre-release and follows 
 - Allow `tools/send-media.sh` to process a complete PC folder directly over SSH.
 - Treat PC-side `.txt` files as direct-media URL lists and report per-batch totals.
 - Use non-interactive SSH batch mode so authentication failures stop cleanly instead of prompting repeatedly.
+- Automatically adapt oversized local GIF, PNG/APNG, JPEG, and WebP files on the PC before upload.
+- Preserve source aspect ratio, leave originals untouched, and report `adapted_count` plus final adapted dimensions.
+- Keep the TV-side size limits as a defensive validation boundary; `--no-adapt` remains available for raw uploads.
 - Physical validation of PC-folder imports, PNG, JPEG, WebP, APNG, reboot persistence, and long-running stability.
 
 ## [0.2.2] - 2026-07-21
