@@ -18,7 +18,7 @@ for required in \
     }
 done
 
-grep '"version": "0.2.4"' "$APP/appinfo.json" >/dev/null
+grep '"version": "0.2.5"' "$APP/appinfo.json" >/dev/null
 grep 'Screensaver Playlist' "$APP/index.html" >/dev/null
 grep 'Automatic updates' "$APP/index.html" >/dev/null
 
