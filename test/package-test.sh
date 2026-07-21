@@ -18,9 +18,10 @@ for required in \
     }
 done
 
-grep '"version": "0.2.6"' "$APP/appinfo.json" >/dev/null
+grep '"version": "0.2.7"' "$APP/appinfo.json" >/dev/null
 grep 'Screensaver Playlist' "$APP/index.html" >/dev/null
 grep 'Automatic updates' "$APP/index.html" >/dev/null
+grep 'Press again to reset' "$APP/js/app.js" >/dev/null
 
 for excluded in .git .github docs test tools README.md CONTRIBUTING.md SECURITY.md CHANGELOG.md Makefile package.json; do
     [ ! -e "$APP/$excluded" ] || {
