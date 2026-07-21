@@ -1,13 +1,13 @@
 {
-  "id": "org.oted.idlegif",
-  "version": "1.3.0",
+  "id": "com.evelyn.webosgifplaylist",
+  "version": "0.1.0",
   "type": "web",
   "main": "index.html",
-  "title": "Idlegif",
+  "title": "GIF Playlist",
   "icon": "assets/idlegif80.png",
   "largeIcon": "assets/idlegif130.png",
-  "vendor": "Oted",
+  "vendor": "EvelynLimaB",
   "resolution": "1920x1080",
   "iconColor": "#111111",
-  "appDescription": "GIF screensaver for rooted LG webOS TVs"
+  "appDescription": "Rotating local GIF screensaver playlist for rooted LG webOS TVs"
 }
