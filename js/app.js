@@ -1,13 +1,12 @@
-// GIF Playlist application controller.
-// Avoids Promise.finally and newer JavaScript syntax for webOS 4.x.
-
 function App() {
     this.webos = new WebOSService();
     this.view = new View();
     this.state = {
         enabled: "no",
+        autostart: "no",
         target: "",
         count: "0",
+        bytes: "0",
         mode: "ordered",
         duration: "30000",
         fit: "crop"
@@ -45,9 +44,9 @@ App.prototype._wireCallbacks = function() {
     });
 
     this.view.onFit(function() {
-        var order = ["crop", "fit", "stretch"];
-        var index = order.indexOf(self.state.fit);
-        var next = order[(index + 1) % order.length];
+        var modes = ["crop", "fit", "stretch"];
+        var index = modes.indexOf(self.state.fit);
+        var next = modes[(index + 1) % modes.length];
         self._run("Updating image scaling…", function() {
             return self.webos.setOption("fit", next);
         }, true);
@@ -67,8 +66,20 @@ App.prototype._wireCallbacks = function() {
         self.refresh();
     });
 
+    this.view.onCheck(function() {
+        self._run("Checking TV compatibility…", function() {
+            return self.webos.preflight();
+        }, false);
+    });
+
+    this.view.onApply(function() {
+        self._run("Applying until the next reboot…", function() {
+            return self.webos.applyTemporary();
+        }, true);
+    });
+
     this.view.onEnable(function() {
-        self._run("Applying screensaver override…", function() {
+        self._run("Applying screensaver and enabling boot startup…", function() {
             return self.webos.enable();
         }, true);
     });
@@ -80,41 +91,57 @@ App.prototype._wireCallbacks = function() {
     });
 
     this.view.onTest(function() {
-        self.view.setStatus("Opening the screensaver…");
-        self.webos.testScreensaver()
-            .then(function() {
-                self.view.setStatus("Screensaver trigger sent.", "ok");
-            })
-            .catch(function(error) {
-                self.view.setStatus("Test failed: " + self._errorText(error), "err");
-            });
+        self.view.setBusy(true);
+        self.view.setStatus("Applying temporarily and opening the screensaver…");
+        self.webos.testScreensaver().then(function(output) {
+            self.view.setStatus(String(output || "Screensaver trigger sent.").trim(), "ok");
+            return self.refresh(true);
+        }).catch(function(error) {
+            self.view.setBusy(false);
+            self.view.setStatus("Test failed: " + self._errorText(error), "err");
+        });
     });
 
     this.view.onReset(function() {
-        if (window.confirm && !window.confirm("Remove every downloaded GIF and restore the stock screensaver?")) {
-            return;
+        var shouldReset = true;
+        if (window.confirm) {
+            shouldReset = window.confirm("Remove every downloaded GIF and restore the stock screensaver?");
         }
-        self._run("Resetting playlist data…", function() {
-            return self.webos.reset();
-        }, true);
+        if (shouldReset) {
+            self._run("Resetting playlist data…", function() {
+                return self.webos.reset();
+            }, true);
+        }
     });
 };
 
 App.prototype._errorText = function(error) {
-    if (error === null || typeof error === "undefined") return "Unknown error";
-    if (typeof error === "string") return error;
-    if (error.message) return error.message;
-    try { return JSON.stringify(error); } catch (ignored) { return String(error); }
+    if (error === null || typeof error === "undefined") {
+        return "Unknown error";
+    }
+    if (typeof error === "string") {
+        return error;
+    }
+    if (error.message) {
+        return error.message;
+    }
+    try {
+        return JSON.stringify(error);
+    } catch (ignored) {
+        return String(error);
+    }
 };
 
 App.prototype._parseStatus = function(text) {
     var result = {};
     var lines = String(text || "").split(/\r?\n/);
-    var i;
-    for (i = 0; i < lines.length; i++) {
-        var equals = lines[i].indexOf("=");
-        if (equals <= 0) continue;
-        result[lines[i].slice(0, equals)] = lines[i].slice(equals + 1);
+    var index;
+
+    for (index = 0; index < lines.length; index += 1) {
+        var separator = lines[index].indexOf("=");
+        if (separator > 0) {
+            result[lines[index].slice(0, separator)] = lines[index].slice(separator + 1);
+        }
     }
     return result;
 };
@@ -122,15 +149,18 @@ App.prototype._parseStatus = function(text) {
 App.prototype._parseItems = function(text) {
     var items = [];
     var lines = String(text || "").split(/\r?\n/);
-    var i;
-    for (i = 0; i < lines.length; i++) {
-        if (!lines[i]) continue;
-        var columns = lines[i].split("\t");
-        if (!columns[0]) continue;
-        items.push({
-            id: columns[0],
-            bytes: parseInt(columns[1] || "0", 10) || 0
-        });
+    var index;
+
+    for (index = 0; index < lines.length; index += 1) {
+        if (lines[index]) {
+            var fields = lines[index].split("\t");
+            if (fields[0]) {
+                items.push({
+                    id: fields[0],
+                    bytes: parseInt(fields[1] || "0", 10) || 0
+                });
+            }
+        }
     }
     return items;
 };
@@ -140,54 +170,59 @@ App.prototype._run = function(message, operation, refreshAfter) {
     this.view.setBusy(true);
     this.view.setStatus(message);
 
-    operation()
-        .then(function(output) {
-            self.view.setStatus(String(output || "Done.").trim(), "ok");
-            if (refreshAfter) return self.refresh(true);
-            self.view.setBusy(false);
-            return null;
-        })
-        .catch(function(error) {
-            self.view.setBusy(false);
-            self.view.setStatus(self._errorText(error), "err");
-        });
+    operation().then(function(output) {
+        self.view.setStatus(String(output || "Done.").trim(), "ok");
+        if (refreshAfter) {
+            return self.refresh(true);
+        }
+        self.view.setBusy(false);
+        return null;
+    }).catch(function(error) {
+        self.view.setBusy(false);
+        self.view.setStatus(self._errorText(error), "err");
+    });
 };
 
-App.prototype.refresh = function(keepMessage) {
+App.prototype.refresh = function(keepStatus) {
     var self = this;
     this.view.setBusy(true);
-    if (!keepMessage) this.view.setStatus("Reading TV state…");
+    if (!keepStatus) {
+        this.view.setStatus("Reading TV state…");
+    }
 
-    return Promise.all([this.webos.status(), this.webos.list()])
-        .then(function(results) {
-            var parsed = self._parseStatus(results[0]);
-            var key;
-            for (key in parsed) {
-                if (parsed.hasOwnProperty(key)) self.state[key] = parsed[key];
+    return Promise.all([
+        this.webos.status(),
+        this.webos.list()
+    ]).then(function(results) {
+        var parsed = self._parseStatus(results[0]);
+        var key;
+        for (key in parsed) {
+            if (parsed.hasOwnProperty(key)) {
+                self.state[key] = parsed[key];
             }
-            self.items = self._parseItems(results[1]);
-            self.view.render(self.state, self.items);
-            self.view.setBusy(false);
-            if (!keepMessage) self.view.setStatus("Ready.", "ok");
-        })
-        .catch(function(error) {
-            self.view.setBusy(false);
-            self.view.setStatus(self._errorText(error), "err");
-        });
+        }
+        self.items = self._parseItems(results[1]);
+        self.view.render(self.state, self.items);
+        if (!keepStatus) {
+            self.view.setStatus("Ready.", "ok");
+        }
+        self.view.setBusy(false);
+    }).catch(function(error) {
+        self.view.setBusy(false);
+        self.view.setStatus(self._errorText(error), "err");
+    });
 };
 
 App.prototype.init = function() {
     var self = this;
     this.view.setBusy(true);
-    this.view.setStatus("Initializing playlist storage…");
-    this.webos.init()
-        .then(function() {
-            return self.refresh(false);
-        })
-        .catch(function(error) {
-            self.view.setBusy(false);
-            self.view.setStatus(self._errorText(error), "err");
-        });
+    this.view.setStatus("Initializing local playlist storage…");
+    this.webos.init().then(function() {
+        return self.refresh(false);
+    }).catch(function(error) {
+        self.view.setBusy(false);
+        self.view.setStatus(self._errorText(error), "err");
+    });
 };
 
 window.addEventListener("DOMContentLoaded", function() {
