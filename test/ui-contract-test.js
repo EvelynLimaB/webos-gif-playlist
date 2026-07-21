@@ -20,7 +20,7 @@ while ((match = idPattern.exec(html)) !== null) {
 }
 
 var lookupPattern = /getElementById\("([A-Za-z0-9_-]+)"\)/g;
-while ((match = lookupPattern.exec(view + "\n" + updater)) !== null) {
+while ((match = lookupPattern.exec(view + "\n" + updater + "\n" + app)) !== null) {
     if (!ids[match[1]]) {
         throw new Error("JavaScript references missing HTML id: " + match[1]);
     }
@@ -41,9 +41,9 @@ while ((match = lookupPattern.exec(view + "\n" + updater)) !== null) {
     }
 });
 
-["btn-update-check", "btn-update-install", "btn-update-auto", "value-update-version", "update-detail"].forEach(function(id) {
+["btn-update-check", "btn-update-install", "btn-update-auto", "value-update-version", "update-detail", "btn-reset"].forEach(function(id) {
     if (!ids[id]) {
-        throw new Error("missing update UI id: " + id);
+        throw new Error("missing required UI id: " + id);
     }
 });
 
@@ -59,6 +59,15 @@ if (updater.indexOf("window.confirm") !== -1) {
 ["autoConfirmArmed", "installConfirmArmed", "Press again to enable", "Press again to install"].forEach(function(token) {
     if (updater.indexOf(token) === -1) {
         throw new Error("missing in-app updater confirmation token: " + token);
+    }
+});
+
+if (app.indexOf("window.confirm") !== -1) {
+    throw new Error("reset still relies on the unreliable native confirmation dialog");
+}
+["resetConfirmArmed", "_armResetConfirmation", "Press again to reset", "15000"].forEach(function(token) {
+    if (app.indexOf(token) === -1) {
+        throw new Error("missing reset confirmation token: " + token);
     }
 });
 
