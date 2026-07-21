@@ -2,10 +2,10 @@
 # Sourced by assets/manager.sh. Do not execute directly.
 
 batch_import_file() {
-    source_file="$1"
-    label="$2"
-    echo "batch_source=$label"
-    if sh "$SELF" import "$source_file"; then
+    batch_file_path="$1"
+    batch_file_label="$2"
+    echo "batch_source=$batch_file_label"
+    if sh "$SELF" import "$batch_file_path"; then
         BATCH_IMPORTED=$((BATCH_IMPORTED + 1))
     else
         BATCH_FAILED=$((BATCH_FAILED + 1))
@@ -13,11 +13,11 @@ batch_import_file() {
 }
 
 batch_import_url() {
-    url="$1"
-    label="$2"
-    encoded="$(printf '%s' "$url" | base64 | tr -d '\r\n')"
-    echo "batch_source=$label"
-    if sh "$SELF" add "$encoded"; then
+    batch_url_value="$1"
+    batch_url_label="$2"
+    batch_url_encoded="$(printf '%s' "$batch_url_value" | base64 | tr -d '\r\n')"
+    echo "batch_source=$batch_url_label"
+    if sh "$SELF" add "$batch_url_encoded"; then
         BATCH_IMPORTED=$((BATCH_IMPORTED + 1))
     else
         BATCH_FAILED=$((BATCH_FAILED + 1))
@@ -25,30 +25,33 @@ batch_import_url() {
 }
 
 batch_import_url_list() {
-    list_file="$1"
-    line_number=0
+    batch_list_file="$1"
+    batch_list_name="$(basename "$batch_list_file")"
+    batch_line_number=0
+    exec 3< "$batch_list_file"
 
-    while IFS= read -r raw_line || [ -n "$raw_line" ]; do
-        line_number=$((line_number + 1))
-        url="$(printf '%s' "$raw_line" | tr -d '\r' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
-        case "$url" in
+    while IFS= read -r batch_raw_line <&3 || [ -n "$batch_raw_line" ]; do
+        batch_line_number=$((batch_line_number + 1))
+        batch_url="$(printf '%s' "$batch_raw_line" | tr -d '\r' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+        case "$batch_url" in
             ''|'#'*) continue ;;
             http://*|https://*)
                 BATCH_URLS=$((BATCH_URLS + 1))
-                batch_import_url "$url" "$(basename "$list_file"):$line_number"
+                batch_import_url "$batch_url" "$batch_list_name:$batch_line_number"
                 ;;
             *)
-                echo "ERROR: invalid URL in $(basename "$list_file"):$line_number" >&2
+                echo "ERROR: invalid URL in $batch_list_name:$batch_line_number" >&2
                 BATCH_FAILED=$((BATCH_FAILED + 1))
                 ;;
         esac
-    done < "$list_file"
+    done
+    exec 3<&-
 }
 
 import_directory() {
-    source_dir="${1:-}"
-    [ -n "$source_dir" ] || { echo "ERROR: missing directory path" >&2; return 1; }
-    [ -d "$source_dir" ] || { echo "ERROR: directory was not found: $source_dir" >&2; return 1; }
+    batch_source_dir="${1:-}"
+    [ -n "$batch_source_dir" ] || { echo "ERROR: missing directory path" >&2; return 1; }
+    [ -d "$batch_source_dir" ] || { echo "ERROR: directory was not found: $batch_source_dir" >&2; return 1; }
 
     BATCH_FILES=0
     BATCH_URLS=0
@@ -57,32 +60,32 @@ import_directory() {
     BATCH_SKIPPED=0
     BATCH_SEEN=0
 
-    for source_file in "$source_dir"/*; do
-        [ -e "$source_file" ] || continue
-        [ -f "$source_file" ] || {
+    for batch_source_file in "$batch_source_dir"/*; do
+        [ -e "$batch_source_file" ] || continue
+        [ -f "$batch_source_file" ] || {
             BATCH_SKIPPED=$((BATCH_SKIPPED + 1))
             continue
         }
 
         BATCH_SEEN=$((BATCH_SEEN + 1))
-        lower_name="$(basename "$source_file" | tr '[:upper:]' '[:lower:]')"
-        case "$lower_name" in
+        batch_lower_name="$(basename "$batch_source_file" | tr '[:upper:]' '[:lower:]')"
+        case "$batch_lower_name" in
             *.gif|*.png|*.apng|*.jpg|*.jpeg|*.webp)
                 BATCH_FILES=$((BATCH_FILES + 1))
-                batch_import_file "$source_file" "$(basename "$source_file")"
+                batch_import_file "$batch_source_file" "$(basename "$batch_source_file")"
                 ;;
             *.txt)
-                batch_import_url_list "$source_file"
+                batch_import_url_list "$batch_source_file"
                 ;;
             *)
                 BATCH_SKIPPED=$((BATCH_SKIPPED + 1))
-                echo "batch_skipped=$(basename "$source_file")"
+                echo "batch_skipped=$(basename "$batch_source_file")"
                 ;;
         esac
     done
 
     if [ "$BATCH_SEEN" -eq 0 ]; then
-        echo "ERROR: directory is empty: $source_dir" >&2
+        echo "ERROR: directory is empty: $batch_source_dir" >&2
         return 1
     fi
 
