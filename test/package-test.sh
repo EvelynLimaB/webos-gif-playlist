@@ -10,7 +10,7 @@ fi
 for required in \
     appinfo.json index.html LICENSE \
     assets/manager.sh assets/install.sh assets/uninstall.sh \
-    assets/lib/core.sh assets/lib/media.sh assets/lib/commands.sh \
+    assets/lib/core.sh assets/lib/media.sh assets/lib/batch.sh assets/lib/commands.sh \
     css/app.css js/webos.js js/view.js js/app.js; do
     [ -f "$APP/$required" ] || {
         echo "Missing packaged file: $required" >&2
@@ -18,7 +18,7 @@ for required in \
     }
 done
 
-grep '"version": "0.2.1"' "$APP/appinfo.json" >/dev/null
+grep '"version": "0.2.2"' "$APP/appinfo.json" >/dev/null
 grep 'Screensaver Playlist' "$APP/index.html" >/dev/null
 
 for excluded in .git .github docs test tools README.md CONTRIBUTING.md SECURITY.md CHANGELOG.md Makefile package.json; do
