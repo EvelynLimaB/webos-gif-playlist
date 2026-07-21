@@ -87,6 +87,20 @@ var UpdatePolicy = (function() {
         };
     }
 
+    function errorText(error) {
+        if (typeof error === "string") {
+            return error;
+        }
+        if (error && error.message) {
+            return error.message;
+        }
+        return String(error || "");
+    }
+
+    function isMissingReleaseError(error) {
+        return /(?:HTTP|status)\s*404\b/i.test(errorText(error));
+    }
+
     function getStoredBoolean(storage, key) {
         try {
             return !!storage && storage.getItem(key) === "yes";
@@ -138,6 +152,7 @@ var UpdatePolicy = (function() {
             return compareVersions(installedVersion, availableVersion) < 0;
         },
         validateManifest: validateManifest,
+        isMissingReleaseError: isMissingReleaseError,
         automaticUpdatesEnabled: function(storage) {
             return getStoredBoolean(storage, AUTO_UPDATE_KEY);
         },
@@ -289,10 +304,22 @@ UpdateController.prototype.check = function(showErrors, allowAutomaticInstall) {
         }
         return manifest;
     }).catch(function(error) {
-        var message = self._errorText(error);
+        var message;
         self.state.checking = false;
         self.state.available = false;
         self.state.manifest = null;
+
+        if (UpdatePolicy.isMissingReleaseError(error)) {
+            self.state.latestVersion = "unpublished";
+            self.state.detail = "No published release exists yet. This development build will begin checking normally after the first GitHub Release is published.";
+            self.render();
+            if (showErrors) {
+                self._setGlobalStatus(self.state.detail, "ok");
+            }
+            return null;
+        }
+
+        message = self._errorText(error);
         self.state.detail = "Update check unavailable: " + message;
         self.render();
         if (showErrors) {
