@@ -43,11 +43,19 @@ make check
 make package
 ```
 
-Install `com.evelyn.webosgifplaylist_0.2.2_all.ipk` with webOS Dev Manager or `ares-install`, then open **Screensaver Playlist** and run **Compatibility check**.
+Install `com.evelyn.webosgifplaylist_0.2.3_all.ipk` with webOS Dev Manager or `ares-install`, then open **Screensaver Playlist** and run **Compatibility check**.
 
 Package installation only initializes/migrates local data. It does **not** activate the override or create a boot hook. Activation is always explicit.
 
 A valid compatibility result must show every dependency as `ok`, including `stat`, `mountsFile=ok`, a downloader, and the expected `/qml/main.qml` target.
+
+### Homebrew Channel updates
+
+A version tag such as `v0.2.3` triggers the release workflow. The workflow verifies that the tag matches `appinfo.json`, runs the full test suite, builds and audits the IPK, generates `com.evelyn.webosgifplaylist.manifest.json` with the IPK SHA-256, and publishes both files to a GitHub Release.
+
+The central Homebrew Channel entry uses the latest-release manifest URL. Once the app is accepted into `webosbrew/apps-repo`, Homebrew Channel detects newer versions and exposes its normal **Update** action. Updates are user-approved rather than silently installed, and existing playlist data remains in `/var/lib/webosbrew/gif-playlist/`.
+
+The prepared central-repository metadata is stored at `store/com.evelyn.webosgifplaylist.yml`.
 
 ## Add media
 
