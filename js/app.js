@@ -1,113 +1,193 @@
-// App — controller: orchestrates WebOSService, GiphyClient and View
+// GIF Playlist application controller.
+// Avoids Promise.finally and newer JavaScript syntax for webOS 4.x.
 
 function App() {
-    this.webos  = new WebOSService();
-    this.giphy  = new GiphyClient();
-    this.view   = new View();
-    this._activeGifId = null;
-
+    this.webos = new WebOSService();
+    this.view = new View();
+    this.state = {
+        enabled: "no",
+        target: "",
+        count: "0",
+        mode: "ordered",
+        duration: "30000",
+        fit: "crop"
+    };
+    this.items = [];
     this._wireCallbacks();
 }
 
 App.prototype._wireCallbacks = function() {
     var self = this;
 
-    this.view.onApiKeySave(function(key) {
-        self.giphy.saveApiKey(key);
-        self.loadGifs();
+    this.view.onAdd(function(url) {
+        self._run("Downloading and validating GIF…", function() {
+            return self.webos.addUrl(url);
+        }, true);
     });
 
-    this.view.onApiKeyClear(function() {
-        self.giphy.saveApiKey("");
-        self.view.renderGiphyGrid(DEFAULTS, self._activeGifId, false);
-        self.view.setStatus("");
+    this.view.onRemove(function(id) {
+        self._run("Removing GIF…", function() {
+            return self.webos.remove(id);
+        }, true);
+    });
+
+    this.view.onMove(function(id, direction) {
+        self._run("Reordering playlist…", function() {
+            return self.webos.move(id, direction);
+        }, true);
+    });
+
+    this.view.onMode(function() {
+        var next = self.state.mode === "shuffle" ? "ordered" : "shuffle";
+        self._run("Updating playback mode…", function() {
+            return self.webos.setOption("mode", next);
+        }, true);
+    });
+
+    this.view.onFit(function() {
+        var order = ["crop", "fit", "stretch"];
+        var index = order.indexOf(self.state.fit);
+        var next = order[(index + 1) % order.length];
+        self._run("Updating image scaling…", function() {
+            return self.webos.setOption("fit", next);
+        }, true);
+    });
+
+    this.view.onDuration(function() {
+        var durations = [10000, 20000, 30000, 60000, 120000];
+        var current = parseInt(self.state.duration, 10);
+        var index = durations.indexOf(current);
+        var next = durations[(index + 1) % durations.length];
+        self._run("Updating rotation interval…", function() {
+            return self.webos.setOption("duration", String(next));
+        }, true);
     });
 
     this.view.onRefresh(function() {
-        self.loadGifs();
+        self.refresh();
     });
 
-    this.view.onGifSelect(function(gif) {
-        self.selectGif(gif);
+    this.view.onEnable(function() {
+        self._run("Applying screensaver override…", function() {
+            return self.webos.enable();
+        }, true);
     });
 
-    this.view.onUrlDownload(function(url) {
-        self.downloadUrl(url);
+    this.view.onDisable(function() {
+        self._run("Restoring the stock screensaver…", function() {
+            return self.webos.disable();
+        }, true);
     });
 
     this.view.onTest(function() {
-        self.view.setStatus("Triggering screensaver…");
+        self.view.setStatus("Opening the screensaver…");
         self.webos.testScreensaver()
-            .then(function()  { self.view.setStatus("Screensaver triggered.", "ok"); })
-            .catch(function(e){ self.view.setStatus("Error: " + e, "err"); });
+            .then(function() {
+                self.view.setStatus("Screensaver trigger sent.", "ok");
+            })
+            .catch(function(error) {
+                self.view.setStatus("Test failed: " + self._errorText(error), "err");
+            });
     });
 
-    this.view.onUninstall(function() {
-        self.view.setStatus("Uninstalling…");
-        self.webos.uninstall()
-            .then(function(out){ self.view.setStatus(out.trim() || "Uninstalled.", "ok"); })
-            .catch(function(e) { self.view.setStatus("Error: " + e, "err"); });
+    this.view.onReset(function() {
+        if (window.confirm && !window.confirm("Remove every downloaded GIF and restore the stock screensaver?")) {
+            return;
+        }
+        self._run("Resetting playlist data…", function() {
+            return self.webos.reset();
+        }, true);
     });
+};
+
+App.prototype._errorText = function(error) {
+    if (error === null || typeof error === "undefined") return "Unknown error";
+    if (typeof error === "string") return error;
+    if (error.message) return error.message;
+    try { return JSON.stringify(error); } catch (ignored) { return String(error); }
+};
+
+App.prototype._parseStatus = function(text) {
+    var result = {};
+    var lines = String(text || "").split(/\r?\n/);
+    var i;
+    for (i = 0; i < lines.length; i++) {
+        var equals = lines[i].indexOf("=");
+        if (equals <= 0) continue;
+        result[lines[i].slice(0, equals)] = lines[i].slice(equals + 1);
+    }
+    return result;
+};
+
+App.prototype._parseItems = function(text) {
+    var items = [];
+    var lines = String(text || "").split(/\r?\n/);
+    var i;
+    for (i = 0; i < lines.length; i++) {
+        if (!lines[i]) continue;
+        var columns = lines[i].split("\t");
+        if (!columns[0]) continue;
+        items.push({
+            id: columns[0],
+            bytes: parseInt(columns[1] || "0", 10) || 0
+        });
+    }
+    return items;
+};
+
+App.prototype._run = function(message, operation, refreshAfter) {
+    var self = this;
+    this.view.setBusy(true);
+    this.view.setStatus(message);
+
+    operation()
+        .then(function(output) {
+            self.view.setStatus(String(output || "Done.").trim(), "ok");
+            if (refreshAfter) return self.refresh(true);
+            self.view.setBusy(false);
+            return null;
+        })
+        .catch(function(error) {
+            self.view.setBusy(false);
+            self.view.setStatus(self._errorText(error), "err");
+        });
+};
+
+App.prototype.refresh = function(keepMessage) {
+    var self = this;
+    this.view.setBusy(true);
+    if (!keepMessage) this.view.setStatus("Reading TV state…");
+
+    return Promise.all([this.webos.status(), this.webos.list()])
+        .then(function(results) {
+            var parsed = self._parseStatus(results[0]);
+            var key;
+            for (key in parsed) {
+                if (parsed.hasOwnProperty(key)) self.state[key] = parsed[key];
+            }
+            self.items = self._parseItems(results[1]);
+            self.view.render(self.state, self.items);
+            self.view.setBusy(false);
+            if (!keepMessage) self.view.setStatus("Ready.", "ok");
+        })
+        .catch(function(error) {
+            self.view.setBusy(false);
+            self.view.setStatus(self._errorText(error), "err");
+        });
 };
 
 App.prototype.init = function() {
-    var rawParams = window.launchParams || (window.PalmSystem && window.PalmSystem.launchParams) || null;
-    var params = {};
-    if (rawParams) {
-        try { params = JSON.parse(rawParams); } catch (e) { params = {}; }
-    }
-    if (params.giphyApiKey) {
-        this.giphy.saveApiKey(params.giphyApiKey);
-    }
-
-    var hasKey = !!this.giphy.getApiKey();
-    this.view.renderGiphyGrid(DEFAULTS, this._activeGifId, hasKey);
-    if (hasKey) {
-        this.loadGifs();
-    }
-};
-
-App.prototype.loadGifs = function() {
     var self = this;
-    var hasKey = !!this.giphy.getApiKey();
-    this.view.setStatus("Loading…");
-    this.view.setLoading(true);
-
-    this.giphy.fetchGifs()
-        .then(function(gifs) {
-            self.view.renderGiphyGrid(gifs, self._activeGifId, hasKey);
-            self.view.setStatus(gifs.length ? "" : "No results — try refreshing.", gifs.length ? "" : "err");
-        })
-        .catch(function(err) { self.view.setStatus("Error: " + err, "err"); })
-        .finally(function()  { self.view.setLoading(false); });
-};
-
-App.prototype.selectGif = function(gif) {
-    var self = this;
-    this.view.setStatus("Downloading and applying…");
-    this.view.setLoading(true);
-
-    this.webos.downloadAndApply(gif.gifUrl)
+    this.view.setBusy(true);
+    this.view.setStatus("Initializing playlist storage…");
+    this.webos.init()
         .then(function() {
-            self._activeGifId = gif.id;
-            self.view.setActiveCard(gif.id);
-            self.view.setStatus("Applied: " + gif.title, "ok");
+            return self.refresh(false);
         })
-        .catch(function(err) { self.view.setStatus("Error: " + err, "err"); })
-        .finally(function()  { self.view.setLoading(false); });
-};
-
-App.prototype.downloadUrl = function(url) {
-    if (!url || !url.trim()) {
-        this.view.setStatus("Please enter a GIF URL.", "err");
-        return;
-    }
-    var self = this;
-    this.view.setStatus("Downloading…");
-
-    this.webos.downloadAndApply(url.trim())
-        .then(function()  { self.view.setStatus("Applied.", "ok"); })
-        .catch(function(e){ self.view.setStatus("Error: Filed to download, is the URL available?", "err"); });
+        .catch(function(error) {
+            self.view.setBusy(false);
+            self.view.setStatus(self._errorText(error), "err");
+        });
 };
 
 window.addEventListener("DOMContentLoaded", function() {
