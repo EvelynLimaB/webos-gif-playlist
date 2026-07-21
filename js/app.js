@@ -14,6 +14,8 @@ function App() {
         maxItems: "24"
     };
     this.items = [];
+    this.resetConfirmArmed = false;
+    this.resetConfirmTimer = null;
     this._wireCallbacks();
 }
 
@@ -72,6 +74,7 @@ App.prototype._wireCallbacks = function() {
     });
 
     this.view.onRefresh(function() {
+        self._clearResetConfirmation();
         self.refresh();
     });
 
@@ -100,6 +103,7 @@ App.prototype._wireCallbacks = function() {
     });
 
     this.view.onTest(function() {
+        self._clearResetConfirmation();
         self.view.setBusy(true);
         self.view.setStatus("Applying temporarily and opening the screensaver…");
         self.webos.testScreensaver().then(function(output) {
@@ -112,16 +116,55 @@ App.prototype._wireCallbacks = function() {
     });
 
     this.view.onReset(function() {
-        var shouldReset = true;
-        if (window.confirm) {
-            shouldReset = window.confirm("Remove every local image and restore the stock screensaver?");
+        if (!self.resetConfirmArmed) {
+            self._armResetConfirmation();
+            return;
         }
-        if (shouldReset) {
-            self._run("Resetting playlist data…", function() {
-                return self.webos.reset();
-            }, true);
-        }
+
+        self._clearResetConfirmation();
+        self._run("Resetting playlist data…", function() {
+            return self.webos.reset();
+        }, true);
     });
+};
+
+App.prototype._clearResetConfirmation = function() {
+    var button = document.getElementById("btn-reset");
+
+    if (this.resetConfirmTimer) {
+        clearTimeout(this.resetConfirmTimer);
+        this.resetConfirmTimer = null;
+    }
+    this.resetConfirmArmed = false;
+    if (button) {
+        button.textContent = "Reset all data";
+        button.className = "danger";
+    }
+};
+
+App.prototype._armResetConfirmation = function() {
+    var self = this;
+    var button = document.getElementById("btn-reset");
+
+    this._clearResetConfirmation();
+    this.resetConfirmArmed = true;
+    if (button) {
+        button.textContent = "Press again to reset";
+        button.className = "danger";
+    }
+    this.view.setStatus(
+        "Press Reset all data again within 15 seconds to delete every local image and setting.",
+        "err"
+    );
+    this.resetConfirmTimer = setTimeout(function() {
+        self.resetConfirmTimer = null;
+        self.resetConfirmArmed = false;
+        if (button) {
+            button.textContent = "Reset all data";
+            button.className = "danger";
+        }
+        self.view.setStatus("Reset cancelled. No data was removed.", "ok");
+    }, 15000);
 };
 
 App.prototype._errorText = function(error) {
@@ -179,6 +222,8 @@ App.prototype._parseItems = function(text) {
 App.prototype._run = function(message, operation, refreshAfter) {
     var self = this;
     var promise;
+
+    this._clearResetConfirmation();
     this.view.setBusy(true);
     this.view.setStatus(message);
 
