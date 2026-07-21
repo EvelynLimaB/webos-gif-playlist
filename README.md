@@ -8,6 +8,7 @@ A local, rotating screensaver playlist for animated and still images. Media is d
 
 - Direct HTTP/HTTPS imports without relying on filename extensions.
 - Personal-file upload from Linux, macOS, or WSL over SSH.
+- Whole-folder batch import, including `.txt` files containing one direct URL per line.
 - GIF, PNG/APNG containers, JPEG, and WebP signature detection.
 - Source bytes are never resized, converted, recompressed, or re-encoded.
 - Up to 24 items, 32 MiB per item, and 256 MiB total.
@@ -41,7 +42,7 @@ make check
 make package
 ```
 
-Install `com.evelyn.webosgifplaylist_0.2.1_all.ipk` with webOS Dev Manager or `ares-install`, then open **Screensaver Playlist** and run **Compatibility check**.
+Install `com.evelyn.webosgifplaylist_0.2.2_all.ipk` with webOS Dev Manager or `ares-install`, then open **Screensaver Playlist** and run **Compatibility check**.
 
 Package installation only initializes/migrates local data. It does **not** activate the override or create a boot hook. Activation is always explicit.
 
@@ -87,6 +88,34 @@ ssh root@192.168.0.13 \
   "sh /media/developer/apps/usr/palm/applications/com.evelyn.webosgifplaylist/assets/manager.sh import /tmp/screensaver-upload.bin; rm -f /tmp/screensaver-upload.bin"
 ```
 
+### Import an entire folder
+
+Upload all files from one PC folder into a single TV directory, for example `/tmp/screensavers`, using webOS Dev Manager's file browser. Then run this once in its authenticated terminal:
+
+```sh
+APP=/media/developer/apps/usr/palm/applications/com.evelyn.webosgifplaylist
+sh "$APP/assets/manager.sh" import-dir /tmp/screensavers
+```
+
+The batch command processes the top level of the directory in filename order:
+
+- `.gif`, `.png`, `.apng`, `.jpg`, `.jpeg`, and `.webp` files are imported as local media;
+- `.txt` files are treated as URL lists, with one direct `http://` or `https://` media URL per line;
+- blank lines and lines beginning with `#` are ignored;
+- unsupported files are skipped and reported;
+- each failed item is reported while the remaining items continue;
+- the final `batch_*` summary reports files, URLs, successful imports, failures, and skipped entries.
+
+Example URL list:
+
+```text
+# Favorites
+https://media.giphy.com/media/example-one/giphy.gif
+https://media.giphy.com/media/example-two/giphy.gif
+```
+
+The normal playlist limits still apply. Check `status` first when importing a large folder so the total does not exceed 24 items or 256 MiB.
+
 ## Controls
 
 - **Apply temporarily:** activate until reboot without creating a startup hook.
@@ -116,17 +145,18 @@ The app bind-mounts a generated QML file over the system entry point; it never o
 1. Run Compatibility check and confirm `/qml/main.qml`, `stat=ok`, and `mountsFile=ok`.
 2. Confirm an existing v0.1.x GIF playlist migrates and still plays.
 3. Add a direct GIF and a personally uploaded GIF.
-4. Test a 1920×1080 JPEG and PNG with Smooth, Fit, and Crop.
-5. Test static WebP, animated WebP, and APNG; record full animation, first-frame-only behavior, or decoder failure.
-6. Add and remove media while the override is active.
-7. Confirm five ordered transitions at 10 seconds and verify shuffle avoids immediate repeats.
-8. Confirm malformed/unsupported files are rejected without changing the playlist.
-9. Confirm applying while another screensaver override is mounted is refused.
-10. Disable and verify the stock LG screensaver returns.
-11. Apply temporarily, reboot with Quick Start+ disabled, and verify the override does not persist.
-12. Enable at boot, perform a full reboot, and verify persistence.
-13. Run for at least one hour while watching for stutter, black frames, restarts, memory pressure, and remote responsiveness.
-14. Reset all data and confirm the stock screensaver and empty data state.
+4. Import a mixed folder and URL list, then verify its batch summary and resulting playlist.
+5. Test a 1920×1080 JPEG and PNG with Smooth, Fit, and Crop.
+6. Test static WebP, animated WebP, and APNG; record full animation, first-frame-only behavior, or decoder failure.
+7. Add and remove media while the override is active.
+8. Confirm five ordered transitions at 10 seconds and verify shuffle avoids immediate repeats.
+9. Confirm malformed/unsupported files are rejected without changing valid imported items.
+10. Confirm applying while another screensaver override is mounted is refused.
+11. Disable and verify the stock LG screensaver returns.
+12. Apply temporarily, reboot with Quick Start+ disabled, and verify the override does not persist.
+13. Enable at boot, perform a full reboot, and verify persistence.
+14. Run for at least one hour while watching for stutter, black frames, restarts, memory pressure, and remote responsiveness.
+15. Reset all data and confirm the stock screensaver and empty data state.
 
 ## Recovery
 
@@ -155,7 +185,7 @@ reboot
 ## Development
 
 ```bash
-make check            # shell, manager, helper, UI-contract tests
+make check            # shell, manager, batch, helper, and UI-contract tests
 make package          # minimal IPK payload
 make audit-package    # inspect the built IPK
 make test-tv          # explicitly trigger the TV screensaver
