@@ -4,8 +4,15 @@ All notable changes are documented here. The project is pre-release and follows 
 
 ## [Unreleased]
 
-- Rebase the v0.2.1 candidate onto the physically confirmed v0.1.1 GIF baseline now on `main`.
-- Physical validation of PNG, JPEG, WebP, APNG, reboot persistence, and long-running stability.
+- Physical validation of mixed-folder imports, PNG, JPEG, WebP, APNG, reboot persistence, and long-running stability.
+
+## [0.2.2] - 2026-07-21
+
+- Add the `import-dir` manager command for importing a whole TV-side directory at once.
+- Import GIF, PNG/APNG, JPEG, and WebP files from the directory's top level.
+- Treat `.txt` files as direct-media URL lists with blank-line and comment support.
+- Continue after individual item failures and print a machine-readable batch summary.
+- Add isolated batch-import and package-content tests.
 
 ## [0.2.1] - 2026-07-21
 
