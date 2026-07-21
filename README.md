@@ -44,7 +44,7 @@ make check
 make package
 ```
 
-Install `com.evelyn.webosgifplaylist_0.2.4_all.ipk` with webOS Dev Manager or `ares-install`, then open **Screensaver Playlist** and run **Compatibility check**.
+Install `com.evelyn.webosgifplaylist_0.2.6_all.ipk` with webOS Dev Manager or `ares-install`, then open **Screensaver Playlist** and run **Compatibility check**.
 
 Package installation only initializes/migrates local data. It does **not** activate the override or create a boot hook. Activation is always explicit.
 
@@ -52,11 +52,11 @@ A valid compatibility result must show every dependency as `ok`, including `stat
 
 ### In-app and Homebrew Channel updates
 
-A version tag such as `v0.2.4` triggers the release workflow. The workflow verifies that the tag matches `appinfo.json`, runs the full test suite, builds and audits the IPK, generates `com.evelyn.webosgifplaylist.manifest.json` with the IPK SHA-256, and publishes both files to a GitHub Release.
+A version tag such as `v0.2.6` triggers the release workflow. The workflow verifies that the tag matches `appinfo.json`, runs the full test suite, builds and audits the IPK, generates `com.evelyn.webosgifplaylist.manifest.json` with the IPK SHA-256, and publishes both files to a GitHub Release.
 
 The app checks that official latest-release manifest when it opens. **Check now** performs the same request manually, and **Install update** delegates installation to the Homebrew Channel service. Before installation, the app rejects manifests with an unexpected package ID, source repository, version, package URL, or SHA-256. Homebrew Channel downloads the IPK, verifies that SHA-256 again, and installs it through the platform package service.
 
-**Automatic updates** are disabled by default. Enabling the option is a persistent user opt-in: when the app opens and finds a newer verified release, it starts the same Homebrew-managed installation automatically. Package installation may close the running app. Reopen it afterward; playlist data, settings, activation state, and the boot hook remain under `/var/lib/webosbrew/gif-playlist/` and `/var/lib/webosbrew/init.d/`.
+**Automatic updates** are disabled by default. To opt in on webOS 4, press the automatic-update control twice within 15 seconds. Manual package installation uses the same visible two-press confirmation instead of the platform's unreliable native JavaScript confirmation dialog. When the app opens and finds a newer verified release, automatic mode starts the same Homebrew-managed installation. Package installation may close the running app. Reopen it afterward; playlist data, settings, activation state, and the boot hook remain under `/var/lib/webosbrew/gif-playlist/` and `/var/lib/webosbrew/init.d/`.
 
 Once accepted into `webosbrew/apps-repo`, Homebrew Channel also detects newer versions through its normal store entry and exposes its own **Update** action. The prepared central-repository metadata is stored at `store/com.evelyn.webosgifplaylist.yml`.
 
@@ -140,8 +140,8 @@ TV-side folder import cannot resize media. Use the PC helper for automatic adapt
 ## Controls
 
 - **Check now:** retrieve and validate the official latest-release manifest.
-- **Install update:** install a newer verified package through Homebrew Channel.
-- **Automatic updates:** opt in or out of installing newer verified releases when the app opens.
+- **Install update:** press twice within 15 seconds to install a newer verified package through Homebrew Channel.
+- **Automatic updates:** press twice within 15 seconds to opt in; press once to opt out.
 - **Apply temporarily:** activate until reboot without creating a startup hook.
 - **Enable at boot:** activate now and create the Homebrew startup hook.
 - **Test screensaver:** apply temporarily and request the system screensaver immediately.
