@@ -1,4 +1,5 @@
 #!/bin/sh
+# shellcheck disable=SC2086 # Intentional splitting of trusted "width height" output from ImageMagick.
 
 set -u
 
