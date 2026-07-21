@@ -13,10 +13,11 @@ all: check package
 check: shellcheck test check-js
 
 check-js:
+	@node --check js/update.js
 	@node --check js/webos.js
 	@node --check js/view.js
 	@node --check js/app.js
-	@! grep -RE '=>|\.finally[[:space:]]*\(|\basync\b|\bawait\b|\bclass[[:space:]]' js/webos.js js/view.js js/app.js
+	@! grep -RE '=>|\.finally[[:space:]]*\(|\basync\b|\bawait\b|\bclass[[:space:]]' js/update.js js/webos.js js/view.js js/app.js
 	@! grep -RE '(^|[;{[:space:]])gap[[:space:]]*:|display:[[:space:]]*grid|var\(--' css/app.css
 
 shellcheck:
@@ -31,6 +32,7 @@ test:
 	@sh test/manager-test.sh
 	@sh test/batch-import-test.sh
 	@sh test/send-media-test.sh
+	@node test/update-policy-test.js
 	@node test/ui-contract-test.js
 
 stage:
@@ -38,7 +40,7 @@ stage:
 	@mkdir -p $(DIST)/assets/lib $(DIST)/css $(DIST)/js
 	@cp appinfo.json index.html LICENSE $(DIST)/
 	@cp css/app.css $(DIST)/css/
-	@cp js/webos.js js/view.js js/app.js $(DIST)/js/
+	@cp js/update.js js/webos.js js/view.js js/app.js $(DIST)/js/
 	@cp assets/idlegif80.png assets/idlegif130.png assets/idlegif300.png $(DIST)/assets/
 	@cp assets/manager.sh assets/install.sh assets/uninstall.sh $(DIST)/assets/
 	@cp assets/lib/core.sh assets/lib/media.sh assets/lib/batch.sh assets/lib/commands.sh $(DIST)/assets/lib/
