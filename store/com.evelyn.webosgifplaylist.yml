@@ -1,0 +1,27 @@
+title: Screensaver Playlist
+iconUri: https://raw.githubusercontent.com/EvelynLimaB/webos-gif-playlist/main/assets/idlegif300.png
+manifestUrl: https://github.com/EvelynLimaB/webos-gif-playlist/releases/latest/download/com.evelyn.webosgifplaylist.manifest.json
+category: screensaver
+pool: main
+description: |
+  **Requires a rooted LG webOS TV with Homebrew Channel.**
+
+  Replaces the stock screensaver with a local playlist of animated and still images while preserving LG's original QML through a reversible bind mount.
+
+  ## Features
+
+  - GIF, PNG/APNG, JPEG, and WebP imports with signature and dimension validation
+  - Direct HTTP/HTTPS media URLs
+  - Whole-folder upload from Linux, macOS, or WSL, including `.txt` URL lists
+  - Automatic PC-side resizing of oversized local images without modifying the originals
+  - Sequential or shuffled playback with configurable timing
+  - Fit, crop, or stretch scaling and smooth or pixel filtering
+  - Temporary activation, explicit boot persistence, safe disable, and full data reset
+  - Migration of existing playlist data across package updates
+  - Protection against replacing or unmounting another screensaver override
+
+  Physically tested on an LG 43LM6300PSB running firmware 05.40.97 / webOS 4.10.2. Decoder support for animated WebP and APNG depends on the firmware.
+
+  Source, installation notes, recovery commands, and test status are available in the project repository.
+funding:
+  github: [EvelynLimaB]
