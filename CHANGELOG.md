@@ -4,13 +4,23 @@ All notable changes are documented here. The project is pre-release and follows 
 
 ## [Unreleased]
 
-- Allow `tools/send-media.sh` to process a complete PC folder directly over SSH.
-- Treat PC-side `.txt` files as direct-media URL lists and report per-batch totals.
-- Use non-interactive SSH batch mode so authentication failures stop cleanly instead of prompting repeatedly.
-- Automatically adapt oversized local GIF, PNG/APNG, JPEG, and WebP files on the PC before upload.
-- Preserve source aspect ratio, leave originals untouched, and report `adapted_count` plus final adapted dimensions.
-- Keep the TV-side size limits as a defensive validation boundary; `--no-adapt` remains available for raw uploads.
-- Physical validation of PC-folder imports, PNG, JPEG, WebP, APNG, reboot persistence, and long-running stability.
+- Physical validation of in-app updates, PC-folder imports, PNG, JPEG, WebP, APNG, reboot persistence, and long-running stability.
+
+## [0.2.4] - 2026-07-21
+
+- Check the official latest-release manifest whenever the application opens.
+- Add manual **Check now** and **Install update** controls.
+- Add persistent, user-opt-in automatic updates; automatic installation remains disabled by default.
+- Reject update manifests with an unexpected application ID, source repository, version, IPK URL, or SHA-256.
+- Delegate package download, checksum verification, and installation to the Homebrew Channel service.
+- Preserve playlist data, settings, mount state, and boot configuration across package replacement.
+- Add update-policy, UI-contract, package-content, and Chromium 53 compatibility checks.
+
+## [0.2.3] - 2026-07-21
+
+- Explicitly restore `AnimatedImage.playing` when each playlist source becomes ready.
+- Clear paused state and restart animated sources from frame zero when revisited after still images.
+- Add the GitHub Release workflow and Homebrew Channel store metadata.
 
 ## [0.2.2] - 2026-07-21
 
@@ -19,6 +29,12 @@ All notable changes are documented here. The project is pre-release and follows 
 - Treat `.txt` files as direct-media URL lists with blank-line and comment support.
 - Continue after individual item failures and print a machine-readable batch summary.
 - Add isolated batch-import and package-content tests.
+- Allow `tools/send-media.sh` to process a complete PC folder directly over SSH.
+- Treat PC-side `.txt` files as direct-media URL lists and report per-batch totals.
+- Use non-interactive SSH batch mode so authentication failures stop cleanly instead of prompting repeatedly.
+- Automatically adapt oversized local GIF, PNG/APNG, JPEG, and WebP files on the PC before upload.
+- Preserve source aspect ratio, leave originals untouched, and report `adapted_count` plus final adapted dimensions.
+- Keep the TV-side size limits as a defensive validation boundary; `--no-adapt` remains available for raw uploads.
 
 ## [0.2.1] - 2026-07-21
 
