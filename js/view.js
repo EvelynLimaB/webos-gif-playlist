@@ -1,277 +1,218 @@
-// View — all DOM rendering and TV remote navigation
+// DOM view and remote-control navigation for Chromium 53-era webOS.
 
 function View() {
-    var self = this;
-    this._callbacks    = {};
-    this._focusables   = [];
-    this._focusIdx     = 0;
-    this._nGiphyItems  = 5; // 4 cards + refresh btn (always grid now)
-    this._nKeyItems    = 2; // key input + save, or clear btn
-    this._nUrlItems    = 2; // url input + download btn
-    this._nActionItems = 2; // test + uninstall
-
-    document.getElementById("btn-download").addEventListener("click", function() {
-        var url = document.getElementById("url-input").value.trim();
-        if (self._callbacks.urlDownload) self._callbacks.urlDownload(url);
-    });
-    document.getElementById("btn-test").addEventListener("click", function() {
-        if (self._callbacks.test) self._callbacks.test();
-    });
-    document.getElementById("btn-uninstall").addEventListener("click", function() {
-        if (self._callbacks.uninstall) self._callbacks.uninstall();
-    });
-
+    this._callbacks = {};
+    this._focusables = [];
+    this._focusIndex = 0;
+    this._busy = false;
+    this._bindStaticControls();
     this._bindNavigation();
 }
 
-// ── Callback registration ─────────────────────────────────────────────────────
+View.prototype.onAdd = function(callback) { this._callbacks.add = callback; };
+View.prototype.onRemove = function(callback) { this._callbacks.remove = callback; };
+View.prototype.onMove = function(callback) { this._callbacks.move = callback; };
+View.prototype.onMode = function(callback) { this._callbacks.mode = callback; };
+View.prototype.onFit = function(callback) { this._callbacks.fit = callback; };
+View.prototype.onDuration = function(callback) { this._callbacks.duration = callback; };
+View.prototype.onRefresh = function(callback) { this._callbacks.refresh = callback; };
+View.prototype.onEnable = function(callback) { this._callbacks.enable = callback; };
+View.prototype.onDisable = function(callback) { this._callbacks.disable = callback; };
+View.prototype.onTest = function(callback) { this._callbacks.test = callback; };
+View.prototype.onReset = function(callback) { this._callbacks.reset = callback; };
 
-View.prototype.onApiKeySave  = function(fn) { this._callbacks.apiKeySave  = fn; };
-View.prototype.onApiKeyClear = function(fn) { this._callbacks.apiKeyClear = fn; };
-View.prototype.onRefresh     = function(fn) { this._callbacks.refresh     = fn; };
-View.prototype.onGifSelect   = function(fn) { this._callbacks.gifSelect   = fn; };
-View.prototype.onUrlDownload = function(fn) { this._callbacks.urlDownload = fn; };
-View.prototype.onTest        = function(fn) { this._callbacks.test        = fn; };
-View.prototype.onUninstall   = function(fn) { this._callbacks.uninstall   = fn; };
+View.prototype._bindStaticControls = function() {
+    var self = this;
 
-// ── GIPHY section ─────────────────────────────────────────────────────────────
+    document.getElementById("btn-add").onclick = function() {
+        var value = document.getElementById("url-input").value.replace(/^\s+|\s+$/g, "");
+        if (self._callbacks.add) self._callbacks.add(value);
+    };
+    document.getElementById("btn-mode").onclick = function() {
+        if (self._callbacks.mode) self._callbacks.mode();
+    };
+    document.getElementById("btn-fit").onclick = function() {
+        if (self._callbacks.fit) self._callbacks.fit();
+    };
+    document.getElementById("btn-duration").onclick = function() {
+        if (self._callbacks.duration) self._callbacks.duration();
+    };
+    document.getElementById("btn-refresh").onclick = function() {
+        if (self._callbacks.refresh) self._callbacks.refresh();
+    };
+    document.getElementById("btn-enable").onclick = function() {
+        if (self._callbacks.enable) self._callbacks.enable();
+    };
+    document.getElementById("btn-disable").onclick = function() {
+        if (self._callbacks.disable) self._callbacks.disable();
+    };
+    document.getElementById("btn-test").onclick = function() {
+        if (self._callbacks.test) self._callbacks.test();
+    };
+    document.getElementById("btn-reset").onclick = function() {
+        if (self._callbacks.reset) self._callbacks.reset();
+    };
+};
 
-View.prototype.renderGiphyGrid = function(gifs, activeGifId, hasKey) {
-    var section = document.getElementById("giphy-section");
-    section.innerHTML = "";
+View.prototype._formatBytes = function(bytes) {
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + " KiB";
+    return (bytes / 1048576).toFixed(1) + " MiB";
+};
 
-    var grid = document.createElement("div");
-    grid.className = "gif-grid";
+View.prototype.render = function(state, items) {
+    document.getElementById("value-enabled").textContent = state.enabled === "yes" ? "Enabled" : "Disabled";
+    document.getElementById("value-target").textContent = state.target || "Not detected";
+    document.getElementById("value-count").textContent = String(items.length) + " / 12";
+    document.getElementById("btn-mode").textContent = "Order: " + (state.mode === "shuffle" ? "Shuffle" : "Sequential");
 
-    var cards = [];
-    gifs.forEach(function(g, i) {
-        var card = document.createElement("div");
-        card.className = "gif-card" + (g.id === activeGifId ? " active" : "");
-        card.tabIndex  = -1;
-        card.dataset.gifId  = g.id;
-        card.dataset.gifIdx = i;
+    var fitLabels = { crop: "Crop", fit: "Fit", stretch: "Stretch" };
+    document.getElementById("btn-fit").textContent = "Scaling: " + (fitLabels[state.fit] || "Crop");
+    document.getElementById("btn-duration").textContent = "Switch every: " + Math.round((parseInt(state.duration, 10) || 30000) / 1000) + "s";
 
-        var img = document.createElement("img");
-        img.src = g.previewUrl;
-        img.alt = g.title;
+    var indicator = document.getElementById("enabled-indicator");
+    indicator.className = state.enabled === "yes" ? "indicator enabled" : "indicator disabled";
 
-        var info = document.createElement("div");
-        info.className = "info";
-        var dims = (g.w && g.kb)
-            ? '<div class="dims">' + g.w + "×" + g.h + " &nbsp;·&nbsp; " + g.kb + " KB</div>"
-            : "";
-        info.innerHTML = '<div class="title">' + _escHtml(g.title || "Untitled") + '</div>' + dims;
+    var container = document.getElementById("playlist");
+    while (container.firstChild) container.removeChild(container.firstChild);
 
-        card.appendChild(img);
-        card.appendChild(info);
-
-        var cb = this._callbacks.gifSelect;
-        card.addEventListener("click", function() { if (cb) cb(g); });
-        grid.appendChild(card);
-        cards.push(card);
-    }.bind(this));
-
-    for (var n = gifs.length; n < 4; n++) {
-        var ph = document.createElement("div");
-        ph.className = "gif-card placeholder";
-        ph.textContent = "—";
-        grid.appendChild(ph);
+    if (!items.length) {
+        var empty = document.createElement("div");
+        empty.className = "empty";
+        empty.textContent = "No GIFs downloaded yet.";
+        container.appendChild(empty);
     }
 
-    section.appendChild(grid);
+    var self = this;
+    var i;
+    for (i = 0; i < items.length; i++) {
+        (function(item, index) {
+            var row = document.createElement("div");
+            row.className = "playlist-row";
 
-    var keyItems = this._renderKeyRow(hasKey, section);
+            var position = document.createElement("div");
+            position.className = "position";
+            position.textContent = String(index + 1);
 
-    var btnRefresh = document.getElementById("btn-refresh");
-    btnRefresh.disabled = !hasKey;
-    var cbRefresh = this._callbacks.refresh;
-    btnRefresh.onclick = function() { if (cbRefresh) cbRefresh(); };
+            var details = document.createElement("div");
+            details.className = "details";
 
-    this._rebuildFocusables(cards.concat([btnRefresh]), keyItems);
-};
+            var name = document.createElement("div");
+            name.className = "item-name";
+            name.textContent = item.id;
 
-View.prototype._renderKeyRow = function(hasKey, section) {
-    var row = document.createElement("div");
-    row.className = "key-row" + (hasKey ? " connected" : "");
+            var size = document.createElement("div");
+            size.className = "item-size";
+            size.textContent = self._formatBytes(item.bytes);
 
-    if (hasKey) {
-        var status = document.createElement("span");
-        status.className = "giphy-status";
-        status.textContent = "GIPHY connected";
+            details.appendChild(name);
+            details.appendChild(size);
 
-        var clearBtn = document.createElement("button");
-        clearBtn.id = "btn-clear-key";
-        clearBtn.textContent = "Clear key";
+            var controls = document.createElement("div");
+            controls.className = "row-controls";
 
-        var cbClear = this._callbacks.apiKeyClear;
-        clearBtn.addEventListener("click", function() { if (cbClear) cbClear(); });
+            var up = document.createElement("button");
+            up.textContent = "Up";
+            up.disabled = index === 0;
+            up.onclick = function() {
+                if (self._callbacks.move) self._callbacks.move(item.id, "up");
+            };
 
-        row.appendChild(status);
-        row.appendChild(clearBtn);
-        section.appendChild(row);
-        return [clearBtn];
-    } else {
-        var input = document.createElement("input");
-        input.type = "text";
-        input.id = "key-input";
-        input.placeholder = "GIPHY API key (optional — free at developers.giphy.com)";
-        input.spellcheck = false;
-        input.autocomplete = "off";
+            var down = document.createElement("button");
+            down.textContent = "Down";
+            down.disabled = index === items.length - 1;
+            down.onclick = function() {
+                if (self._callbacks.move) self._callbacks.move(item.id, "down");
+            };
 
-        var saveBtn = document.createElement("button");
-        saveBtn.id = "btn-save-key";
-        saveBtn.className = "primary";
-        saveBtn.textContent = "Connect GIPHY";
+            var remove = document.createElement("button");
+            remove.className = "danger compact";
+            remove.textContent = "Remove";
+            remove.onclick = function() {
+                if (self._callbacks.remove) self._callbacks.remove(item.id);
+            };
 
-        var cbSave = this._callbacks.apiKeySave;
-        var doSave = function() {
-            var key = input.value.trim();
-            if (key && cbSave) cbSave(key);
-        };
-        saveBtn.addEventListener("click", doSave);
-        input.addEventListener("keydown", function(e) { if (e.keyCode === 13) doSave(); });
-
-        row.appendChild(input);
-        row.appendChild(saveBtn);
-        section.appendChild(row);
-        return [input, saveBtn];
+            controls.appendChild(up);
+            controls.appendChild(down);
+            controls.appendChild(remove);
+            row.appendChild(position);
+            row.appendChild(details);
+            row.appendChild(controls);
+            container.appendChild(row);
+        })(items[i], i);
     }
+
+    this._rebuildFocusables();
+    this.setBusy(this._busy);
 };
 
-// ── State updates ─────────────────────────────────────────────────────────────
-
-View.prototype.setLoading = function(on) {
-    document.querySelectorAll(".gif-card:not(.placeholder)").forEach(function(c) {
-        c.classList.toggle("loading", on);
-    });
+View.prototype.setStatus = function(message, type) {
+    var status = document.getElementById("status");
+    status.textContent = message || "";
+    status.className = type || "";
 };
 
-View.prototype.setActiveCard = function(gifId) {
-    document.querySelectorAll(".gif-card").forEach(function(c) {
-        c.classList.toggle("active", c.dataset.gifId === gifId);
-    });
+View.prototype.setBusy = function(busy) {
+    this._busy = !!busy;
+    var buttons = document.getElementsByTagName("button");
+    var i;
+    for (i = 0; i < buttons.length; i++) {
+        if (buttons[i].getAttribute("data-permanent-disabled") === "true") continue;
+        if (busy) {
+            buttons[i].setAttribute("data-was-disabled", buttons[i].disabled ? "true" : "false");
+            buttons[i].disabled = true;
+        } else {
+            var wasDisabled = buttons[i].getAttribute("data-was-disabled");
+            if (wasDisabled !== null) {
+                buttons[i].disabled = wasDisabled === "true";
+                buttons[i].removeAttribute("data-was-disabled");
+            }
+        }
+    }
+    document.getElementById("app").className = busy ? "busy" : "";
+    if (!busy) this._rebuildFocusables();
 };
 
-View.prototype.setStatus = function(msg, type) {
-    var el = document.getElementById("status");
-    el.textContent = msg;
-    el.className   = type || "";
-};
+View.prototype._rebuildFocusables = function() {
+    var previous = this._focusables[this._focusIndex];
+    var nodes = document.querySelectorAll("button:not([disabled]), input:not([disabled])");
+    this._focusables = [];
+    var i;
+    for (i = 0; i < nodes.length; i++) this._focusables.push(nodes[i]);
 
-// ── Navigation ────────────────────────────────────────────────────────────────
-
-View.prototype._rebuildFocusables = function(giphyItems, keyItems) {
-    var urlInput     = document.getElementById("url-input");
-    var btnDownload  = document.getElementById("btn-download");
-    var btnTest      = document.getElementById("btn-test");
-    var btnUninstall = document.getElementById("btn-uninstall");
-
-    keyItems = keyItems || [];
-    // Preserve focus by element identity, not index. Persistent controls (Refresh,
-    // URL input, action buttons) keep focus across re-renders even when the number
-    // of GIF cards changes — so the cursor never jumps off Refresh when a fetch
-    // returns fewer cards. Cards are recreated each render, so focus that was on a
-    // card (now gone) falls back to the first card.
-    var prevEl = this._focusables[this._focusIdx];
-    this._focusables  = giphyItems.concat(keyItems, [urlInput, btnDownload, btnTest, btnUninstall]);
-    this._nGiphyItems = giphyItems.length;
-    this._nKeyItems   = keyItems.length;
-    var idx = prevEl ? this._focusables.indexOf(prevEl) : -1;
-    this._focusIdx    = idx >= 0 ? idx : 0;
-    this._focusables[this._focusIdx] && this._focusables[this._focusIdx].focus();
+    var nextIndex = previous ? this._focusables.indexOf(previous) : -1;
+    this._focusIndex = nextIndex >= 0 ? nextIndex : 0;
+    if (this._focusables[this._focusIndex]) this._focusables[this._focusIndex].focus();
 };
 
 View.prototype._bindNavigation = function() {
     var self = this;
-    var COLS = 2;
-
-    document.addEventListener("keydown", function(e) {
-        var key = e.keyCode;
+    document.addEventListener("keydown", function(event) {
+        var key = event.keyCode;
         if (key !== 37 && key !== 38 && key !== 39 && key !== 40 && key !== 13) return;
 
         var active = document.activeElement;
-        if (active && active.tagName === "INPUT" && key !== 38 && key !== 40) return;
-
-        e.preventDefault();
-
-        var f      = self._focusables;
-        var idx    = self._focusIdx;
-        var nG     = self._nGiphyItems;  // 4 cards + refresh = 5
-        var nK     = self._nKeyItems;
-        var kStart = nG;
-        var uStart = nG + nK;
-        var aStart = uStart + self._nUrlItems;
-        var aEnd   = aStart + self._nActionItems - 1;
-
-        var inGiphy  = idx < nG;
-        var inKey    = nK > 0 && idx >= kStart && idx < uStart;
-        var inUrl    = idx >= uStart && idx < aStart;
-        var inAction = idx >= aStart;
-
-        if (key === 13) { f[idx] && f[idx].click(); return; }
-
-        var newIdx = idx;
-
-        if (inGiphy) {
-            var nCards    = nG - 1;       // 4
-            var refreshAt = nG - 1;       // 4
-            var isRefresh = (idx === refreshAt);
-
-            if (isRefresh) {
-                if (key === 37) newIdx = Math.min(COLS - 1, nCards - 1); // → top-right card
-                else if (key === 40) newIdx = 0;                          // → top-left card
-            } else {
-                var row = Math.floor(idx / COLS);
-                var col = idx % COLS;
-                if (key === 37 && col > 0) newIdx = idx - 1;
-                else if (key === 39) {
-                    if (col < COLS - 1 && idx + 1 < nCards) newIdx = idx + 1;
-                    else newIdx = refreshAt;
-                }
-                else if (key === 40) {
-                    if (idx + COLS < nCards) newIdx = idx + COLS;
-                    else newIdx = kStart; // bottom row → key zone
-                }
-                else if (key === 38) {
-                    if (row > 0) newIdx = idx - COLS;
-                    else newIdx = refreshAt; // top row UP → Refresh
-                }
+        if (active && active.tagName === "INPUT" && (key === 37 || key === 39 || key === 13)) {
+            if (key === 13) {
+                event.preventDefault();
+                document.getElementById("btn-add").click();
             }
-        } else if (inKey) {
-            var kEnd = kStart + nK - 1;
-            if (key === 40) {
-                if (idx < kEnd) newIdx = idx + 1;
-                else newIdx = uStart;
-            } else if (key === 38) {
-                if (idx > kStart) newIdx = idx - 1;
-                else newIdx = nG - 2; // → bottom-left card (idx 2)
-            } else if (key === 37 && idx > kStart) {
-                newIdx = idx - 1;
-            } else if (key === 39 && idx < kEnd) {
-                newIdx = idx + 1;
-            }
-        } else if (inUrl) {
-            var uEnd = uStart + self._nUrlItems - 1;
-            if (key === 40) {
-                if (idx < uEnd) newIdx = idx + 1;
-                else newIdx = aStart;
-            } else if (key === 38) {
-                if (idx > uStart) newIdx = idx - 1;
-                else newIdx = nK > 0 ? kStart + nK - 1 : nG - 2; // → last key item
-            }
-        } else if (inAction) {
-            if (key === 37 && idx > aStart) newIdx = idx - 1;
-            else if (key === 39 && idx < aEnd) newIdx = idx + 1;
-            else if (key === 38) newIdx = uStart + self._nUrlItems - 1; // → download btn
+            return;
         }
 
-        self._focusIdx = newIdx;
-        f[newIdx] && f[newIdx].focus();
+        if (!self._focusables.length) return;
+        event.preventDefault();
+
+        if (key === 13) {
+            self._focusables[self._focusIndex].click();
+            return;
+        }
+
+        if (key === 37 || key === 38) {
+            self._focusIndex = Math.max(0, self._focusIndex - 1);
+        } else {
+            self._focusIndex = Math.min(self._focusables.length - 1, self._focusIndex + 1);
+        }
+        self._focusables[self._focusIndex].focus();
     });
 };
-
-// ── Utility ───────────────────────────────────────────────────────────────────
-
-function _escHtml(s) {
-    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
