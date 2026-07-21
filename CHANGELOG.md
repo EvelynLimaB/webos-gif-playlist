@@ -6,6 +6,14 @@ All notable changes are documented here. The project is pre-release and follows 
 
 - Physical validation of in-app updates, PC-folder imports, PNG, JPEG, WebP, APNG, reboot persistence, and long-running stability.
 
+## [0.2.6] - 2026-07-21
+
+- Replace unreliable native `window.confirm()` dialogs in the updater with visible two-press confirmations designed for TV remotes.
+- Require the second press within 15 seconds for both automatic-update opt-in and manual package installation.
+- Verify that the automatic-update preference and pending update version were actually persisted before reporting success.
+- Handle unavailable packaged-app storage without leaving the UI in a false enabled state.
+- Add regression checks that prohibit native updater confirmation dialogs and cover persistence failures.
+
 ## [0.2.5] - 2026-07-21
 
 - Treat GitHub's expected `404` response as an empty release channel rather than an update failure.
@@ -50,7 +58,7 @@ All notable changes are documented here. The project is pre-release and follows 
 - Refuse to replace an existing screensaver mount owned by another package.
 - Unmount only a bind mount identified as belonging to Screensaver Playlist.
 - Serialize mutating operations with a stale-lock recovery mechanism.
-- Make imports, removals, reordering, settings, and QML updates transactional around QML generation.
+- Make imports, removals, reordering, and setting changes transactional around QML regeneration.
 - Stop delayed decoder-error advancement after a later image becomes ready.
 - Make package installation initialize data without activating the override.
 
@@ -65,7 +73,7 @@ All notable changes are documented here. The project is pre-release and follows 
 - Add contributor, architecture, testing, security, changelog, templates, and editor configuration.
 - Replace the personal default TV address in the upload helper with explicit configuration.
 - Support SSH user, port, and identity options and stream local files without relying on SCP/SFTP behavior.
-- Document the unified `@webos-tools/cli` toolchain.
+- Document the unified LG webOS CLI workflow.
 
 ## [0.2.0] - 2026-07-21
 
