@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - feature/**
+  pull_request:
+
+jobs:
+  validate-and-package:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Validate shell syntax and portability
+        run: |
+          sh -n assets/manager.sh
+          sh -n assets/install.sh
+          sh -n assets/uninstall.sh
+          sh -n test/manager-test.sh
+          ! grep -RE '\[\[|pipefail' assets/*.sh test/*.sh
+
+      - name: Run manager integration tests
+        run: sh test/manager-test.sh
+
+      - name: Validate Chromium 53 JavaScript and CSS baseline
+        run: |
+          node --check js/webos.js
+          node --check js/view.js
+          node --check js/app.js
+          ! grep -RE '=>|\.finally[[:space:]]*\(|\basync\b|\bawait\b|\bclass[[:space:]]' js/webos.js js/view.js js/app.js
+          ! grep -RE '(^|[;{[:space:]])gap[[:space:]]*:|display:[[:space:]]*grid|var\(--' css/app.css
+
+      - name: Install ares-cli
+        run: npm install -g @webosose/ares-cli
+
+      - name: Build IPK
+        run: make package
+
+      - name: Inspect packaged contents
+        run: |
+          IPK=$(ls com.evelyn.webosgifplaylist_*_all.ipk)
+          mkdir -p package-audit
+          cd package-audit
+          ar x "../$IPK"
+          tar -xzf data.tar.gz
+          APP=usr/palm/applications/com.evelyn.webosgifplaylist
+          test -f "$APP/assets/manager.sh"
+          test -f "$APP/js/webos.js"
+          test -f "$APP/js/view.js"
+          test -f "$APP/js/app.js"
+          test ! -e "$APP/.github"
+          test ! -e "$APP/assets/screenshot.png"
+          test ! -e "$APP/js/giphy.js"
+          test ! -e "$APP/assets/Clock.qml"
+          test ! -e "$APP/assets/screensaver.qml"
+
+      - name: Upload test package
+        uses: actions/upload-artifact@v4
+        with:
+          name: webos-gif-playlist-ipk
+          path: com.evelyn.webosgifplaylist_*_all.ipk
+          if-no-files-found: error

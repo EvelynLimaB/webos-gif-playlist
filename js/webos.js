@@ -1,56 +1,142 @@
-// WebOSService — platform adapter for webOS luna bus and shell exec via Homebrew Channel
-
-// Derive install path from the page URL so this works regardless of install location
-// (sideload: /media/developer/apps/..., store: /mnt/lg/appstore/...)
-var APP_DIR = window.location.pathname.replace(/\/[^/]+$/, '');
+// webOS 4 / Chromium 53 compatible platform adapter.
+var APP_DIR = window.location.pathname.replace(/\/[^/]+$/, "");
+var MANAGER_PATH = APP_DIR + "/assets/manager.sh";
 
 function WebOSService() {}
 
 WebOSService.prototype.luna = function(service, params) {
     return new Promise(function(resolve, reject) {
         if (typeof PalmServiceBridge === "undefined") {
-            reject("PalmServiceBridge not available (not running on TV)");
+            reject("PalmServiceBridge is unavailable. Run this app on a rooted webOS TV.");
             return;
         }
+
         var bridge = new PalmServiceBridge();
-        bridge.onservicecallback = function(msg) {
-            var r;
-            try { r = JSON.parse(msg); } catch(e) { reject("Bad response: " + msg); return; }
-            r.returnValue ? resolve(r) : reject(r.errorText || "Service call failed");
+        bridge.onservicecallback = function(message) {
+            var response;
+            try {
+                response = JSON.parse(message);
+            } catch (error) {
+                reject("Invalid service response: " + message);
+                return;
+            }
+
+            if (response.returnValue) {
+                resolve(response);
+            } else {
+                reject(response.errorText || response.stderrString || "Service call failed");
+            }
         };
         bridge.call(service, JSON.stringify(params || {}));
     });
 };
 
-WebOSService.prototype.exec = function(cmd) {
-    return this.luna("luna://org.webosbrew.hbchannel.service/exec", { command: cmd })
-        .then(function(r) { return r.stdoutString || ""; });
+WebOSService.prototype.exec = function(command) {
+    return this.luna("luna://org.webosbrew.hbchannel.service/exec", {
+        command: command
+    }).then(function(response) {
+        return (response.stdoutString || "") + (response.stderrString || "");
+    });
 };
 
-WebOSService.prototype.install = function() {
-    return this.exec("sh " + APP_DIR + "/assets/install.sh");
+WebOSService.prototype.manager = function(argumentsText) {
+    return this.exec('sh "' + MANAGER_PATH + '" ' + argumentsText);
 };
 
-WebOSService.prototype.uninstall = function() {
-    return this.exec("sh " + APP_DIR + "/assets/uninstall.sh");
+WebOSService.prototype.init = function() {
+    return this.manager("init");
 };
 
-WebOSService.prototype.testScreensaver = function() {
-    // Run entirely in hbchannel (root process) so it isn't affected by the app being suspended
+WebOSService.prototype.preflight = function() {
+    return this.manager("preflight");
+};
+
+WebOSService.prototype.status = function() {
+    return this.manager("status");
+};
+
+WebOSService.prototype.list = function() {
+    return this.manager("list");
+};
+
+WebOSService.prototype.addUrl = function(url) {
+    var encoded;
+
+    if (typeof url !== "string" || !/^https?:\/\//i.test(url)) {
+        return Promise.reject("Enter a direct http:// or https:// GIF URL.");
+    }
+
+    try {
+        encoded = window.btoa(unescape(encodeURIComponent(url)));
+    } catch (error) {
+        return Promise.reject("The URL could not be encoded.");
+    }
+
+    if (!/^[A-Za-z0-9+/=]+$/.test(encoded)) {
+        return Promise.reject("The encoded URL was rejected.");
+    }
+
+    return this.manager("add '" + encoded + "'");
+};
+
+WebOSService.prototype.remove = function(id) {
+    if (!/^[A-Za-z0-9._-]+$/.test(id)) {
+        return Promise.reject("Invalid item id.");
+    }
+    return this.manager("remove '" + id + "'");
+};
+
+WebOSService.prototype.move = function(id, direction) {
+    if (!/^[A-Za-z0-9._-]+$/.test(id)) {
+        return Promise.reject("Invalid item id.");
+    }
+    if (direction !== "up" && direction !== "down") {
+        return Promise.reject("Invalid direction.");
+    }
+    return this.manager("move '" + id + "' " + direction);
+};
+
+WebOSService.prototype.setOption = function(key, value) {
+    var validators = {
+        mode: /^(ordered|shuffle)$/,
+        duration: /^\d{5,6}$/,
+        fit: /^(crop|fit|stretch)$/
+    };
+
+    if (!validators[key] || !validators[key].test(String(value))) {
+        return Promise.reject("Invalid setting.");
+    }
+
+    return this.manager("set " + key + " '" + value + "'");
+};
+
+WebOSService.prototype.applyTemporary = function() {
+    return this.manager("apply");
+};
+
+WebOSService.prototype.enable = function() {
+    return this.manager("enable");
+};
+
+WebOSService.prototype.disable = function() {
+    return this.manager("disable");
+};
+
+WebOSService.prototype.reset = function() {
+    return this.manager("reset");
+};
+
+WebOSService.prototype.triggerScreensaver = function() {
     return this.exec(
-        "luna-send -n 1 luna://com.webos.applicationManager/launch '{\"id\":\"com.webos.app.home\"}'" +
-        " && sleep 3" +
-        " && luna-send -n 1 luna://com.webos.service.tvpower/power/turnOnScreenSaver '{}'"
+        "luna-send -n 1 luna://com.webos.applicationManager/launch " +
+        "'{\"id\":\"com.webos.app.home\"}' && sleep 3 && " +
+        "luna-send -n 1 luna://com.webos.service.tvpower/power/turnOnScreenSaver '{}'"
     );
 };
 
-WebOSService.prototype.downloadAndApply = function(gifUrl) {
-    // The URL is interpolated into a root shell command (via hbchannel exec), so
-    // reject anything that isn't a plain http(s) URL or could break out of the
-    // double quotes: " ` $ \ and whitespace. Other chars are inert inside quotes.
-    if (typeof gifUrl !== "string" || !/^https?:\/\//i.test(gifUrl) || /["`$\\\s]/.test(gifUrl)) {
-        return Promise.reject("Invalid or unsafe URL");
-    }
-    var dest = "/var/lib/webosbrew/idlegif/screensaver.gif";
-    return this.exec('wget -q -O "' + dest + '" "' + gifUrl + '" && sh ' + APP_DIR + "/assets/install.sh");
+WebOSService.prototype.testScreensaver = function() {
+    var self = this;
+    return this.applyTemporary().then(function() {
+        return self.triggerScreensaver();
+    });
 };
